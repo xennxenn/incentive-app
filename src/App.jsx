@@ -3,7 +3,7 @@ import {
   Calendar, Users, DollarSign, FileText, Plus, Trash2, Edit2, 
   ChevronDown, CheckSquare, Square, Printer, Save, RefreshCw, X, FolderPlus,
   AlertCircle, CheckCircle, Cloud, Loader2, ArrowUp, ArrowDown, Lock, LogOut, UserPlus, Shield,
-  BarChart3, PieChart, UserCog, CalendarDays, Database, FileSpreadsheet, AlertTriangle, Clock, UserMinus, Pencil, Ruler, MapPin, Key, Settings
+  BarChart3, PieChart, UserCog, CalendarDays, Database, FileSpreadsheet, AlertTriangle, Clock, UserMinus, Pencil, Ruler, MapPin, Key, Settings, Search
 } from 'lucide-react';
 
 // --- Firebase Imports ---
@@ -59,12 +59,9 @@ try {
   if (typeof __firebase_config !== 'undefined' && __firebase_config) {
       try {
         configToUse = JSON.parse(__firebase_config);
-        console.log("Environment: Canvas (System Config)");
       } catch (e) {
         console.warn("System config parse error, using manual config");
       }
-  } else {
-      console.log("Environment: External/Vercel (Manual Config)");
   }
 
   app = initializeApp(configToUse);
@@ -165,7 +162,7 @@ export default function App() {
   const [dbReady, setDbReady] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [permissionError, setPermissionError] = useState(false); // Track permission errors
+  const [permissionError, setPermissionError] = useState(false); 
   
   const [teams, setTeams] = useState([]);
   const [holidays, setHolidays] = useState([]); 
@@ -190,6 +187,7 @@ export default function App() {
   const [addingMemberTo, setAddingMemberTo] = useState(null); 
   const [newMember, setNewMember] = useState({ name: '', joinDate: '', resignDate: '' }); 
   const [showPeriodManager, setShowPeriodManager] = useState(false);
+  const [searchQuery, setSearchQuery] = useState(''); // State for search
   
   // New Admin UI State
   const [newUser, setNewUser] = useState({ username: '', password: '', name: '', role: 'admin' });
@@ -209,7 +207,7 @@ export default function App() {
   
   const leaveMenuRef = useRef(null);
 
-  // --- Handlers (Defined Early) ---
+  // --- Handlers ---
   const showNotification = (message, type = 'success') => { setNotification({ message, type }); setTimeout(() => setNotification(null), 4000); };
   const requestConfirm = (title, message, onConfirm) => { setConfirmModal({ title, message, onConfirm }); };
 
@@ -278,13 +276,9 @@ export default function App() {
     if (!auth) return;
     const initAuth = async () => { 
         try {
-            // Priority 1: Check for System Token (Guaranteed Access for Canvas)
             if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                console.log("Authenticating with System Token...");
                 await signInWithCustomToken(auth, __initial_auth_token);
             } else {
-                // Priority 2: Anonymous Fallback (For External/Vercel)
-                console.log("Authenticating Anonymously...");
                 await signInAnonymously(auth); 
             }
         } catch (err) {
@@ -295,40 +289,26 @@ export default function App() {
     initAuth();
     const unsubscribe = onAuthStateChanged(auth, (u) => { 
         if (u) {
-            console.log("Firebase Connected:", u.uid);
             setDbReady(true); 
         }
     });
     return () => unsubscribe();
   }, []);
 
-  // --- Fetch App Users & Create Default if missing ---
+  // --- Fetch Data Effects ---
   useEffect(() => {
     if (!dbReady || !db) return;
-    // Note: We don't block by permissionError here anymore to allow retries or background attempts
-    // if (permissionError) return; 
-    
     const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'app_users');
-    
     const unsub = onSnapshot(colRef, async (snap) => {
         const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         setAppUsers(list);
-    }, (err) => {
-        handlePermissionError(err);
-    });
+    }, (err) => handlePermissionError(err));
     return () => unsub();
-  }, [dbReady]); // Removed permissionError from dep array to prevent loop
+  }, [dbReady]);
 
-  // --- Data Sync Effect ---
   useEffect(() => {
     if (!dbReady || !currentUser || !db) { setLoading(false); return; }
-    // if (permissionError) return; // Allow rendering even if error occurred previously
-    
-    // Safety check for appId
-    if (!appId || appId.includes('/')) {
-        console.error("Critical Error: Invalid appId", appId);
-        return;
-    }
+    if (!appId || appId.includes('/')) { console.error("Invalid appId", appId); return; }
 
     const unsubTeams = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), async (snap) => {
           const list = snap.docs.map(d => ({ id: d.id, ...d.data() })); setTeams(list);
@@ -337,8 +317,7 @@ export default function App() {
              if (check.empty) { 
                  try {
                     DEFAULT_TEAMS_DATA.forEach(async (t) => await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), t)); 
-                    showNotification("สร้างข้อมูลทีมเริ่มต้น (Fresh V6 Deployment)", "success"); 
-                 } catch(e) { console.error("Seed Error", e); }
+                 } catch(e) { }
              }
           }
     }, (err) => handlePermissionError(err));
@@ -349,31 +328,23 @@ export default function App() {
     const unsubPeriods = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'savedPeriods'), (s) => { setSavedPeriods(s.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false); }, (err) => handlePermissionError(err));
     
     return () => { unsubTeams(); unsubJobs(); unsubLeaves(); unsubHols(); unsubPeriods(); };
-  }, [dbReady, currentUser]); // Removed permissionError from dep array
+  }, [dbReady, currentUser]);
 
   useEffect(() => { localStorage.setItem(`pasaya_period_${appId}`, JSON.stringify(period)); }, [period]);
   
-  // Check localStorage for logged in user
   useEffect(() => {
       const storedUser = localStorage.getItem('pasaya_app_user');
-      if (storedUser) {
-          try {
-              setCurrentUser(JSON.parse(storedUser));
-          } catch(e) {}
-      }
+      if (storedUser) { try { setCurrentUser(JSON.parse(storedUser)); } catch(e) {} }
   }, []);
 
   useEffect(() => { function handleClickOutside(event) { if (leaveMenuRef.current && !leaveMenuRef.current.contains(event.target)) setActiveLeaveCell(null); } document.addEventListener("mousedown", handleClickOutside); return () => document.removeEventListener("mousedown", handleClickOutside); }, [leaveMenuRef]);
 
-  // --- Business Logic Handlers ---
-
+  // --- Login & Logout ---
   const handleLogin = async (e) => {
       e.preventDefault();
-      
       const inputUser = usernameInput.trim();
       const inputPass = passwordInput.trim();
       
-      // 1. PRIORITY CHECK: Hardcoded Default User
       if (inputUser === DEFAULT_SUPER_ADMIN.username && inputPass === DEFAULT_SUPER_ADMIN.password) {
            const adminData = { username: inputUser, role: 'super_admin', name: 'Admin T58121' };
            setCurrentUser(adminData);
@@ -381,31 +352,20 @@ export default function App() {
            showNotification(`ยินดีต้อนรับ ${adminData.name}`);
            setUsernameInput('');
            setPasswordInput('');
-           
            if (db && !permissionError) {
                try {
-                   // Ensure default user exists in DB for future reference
                    const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'app_users'), where("username", "==", DEFAULT_SUPER_ADMIN.username));
                    getDocs(q).then((snap) => {
-                       if (snap.empty) {
-                            addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'app_users'), DEFAULT_SUPER_ADMIN);
-                       }
-                   }).catch(err => handlePermissionError(err));
-               } catch (err) { handlePermissionError(err); }
+                       if (snap.empty) addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'app_users'), DEFAULT_SUPER_ADMIN);
+                   }).catch(err => {});
+               } catch (err) {}
            }
            return;
       }
 
-      // 2. Database User Check
-      // Note: If permissionError is true, this might fail, but we don't block login if user cached or hardcoded
-      if (permissionError) {
-          showNotification('ฐานข้อมูลยังเชื่อมต่อไม่ได้ (Permission Error)', 'error');
-          // Don't return, try to check appUsers if available in memory?
-          // If permission error, appUsers array might be empty.
-      }
+      if (permissionError) { showNotification('ฐานข้อมูลยังเชื่อมต่อไม่ได้ (Permission Error)', 'error'); }
 
       const dbUser = appUsers.find(u => u.username === inputUser && u.password === inputPass);
-      
       if (dbUser) {
           const userData = { username: dbUser.username, role: dbUser.role, name: dbUser.name || dbUser.username };
           setCurrentUser(userData);
@@ -414,11 +374,8 @@ export default function App() {
           setUsernameInput('');
           setPasswordInput('');
       } else {
-          if (permissionError) {
-             showNotification('เข้าสู่ระบบไม่ได้: ติดสิทธิ์ Database (กรุณาใช้ User หลัก T58121)', 'error');
-          } else {
-             showNotification('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', 'error');
-          }
+          if (permissionError) showNotification('เข้าสู่ระบบไม่ได้: ติดสิทธิ์ Database (กรุณาใช้ User หลัก T58121)', 'error');
+          else showNotification('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', 'error');
       }
   };
 
@@ -427,11 +384,10 @@ export default function App() {
       localStorage.removeItem('pasaya_app_user'); 
   };
 
-  // --- Admin User Management ---
+  // --- CRUD Handlers ---
   const handleAddAppUser = async () => {
-      if (!newUser.username || !newUser.password) { showNotification('กรุณากรอก Username และ Password', 'error'); return; }
-      if (appUsers.some(u => u.username === newUser.username)) { showNotification('Username นี้มีอยู่แล้ว', 'error'); return; }
-      
+      if (!newUser.username || !newUser.password) { showNotification('กรุณากรอกข้อมูล', 'error'); return; }
+      if (appUsers.some(u => u.username === newUser.username)) { showNotification('Username ซ้ำ', 'error'); return; }
       try {
           await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'app_users'), newUser);
           setNewUser({ username: '', password: '', name: '', role: 'admin' });
@@ -440,9 +396,7 @@ export default function App() {
   };
 
   const handleRemoveAppUser = (id, username) => {
-      if (username === DEFAULT_SUPER_ADMIN.username) { showNotification('ลบ Super Admin หลักไม่ได้', 'error'); return; }
-      if (username === currentUser.username) { showNotification('ลบตัวเองไม่ได้', 'error'); return; }
-      
+      if (username === DEFAULT_SUPER_ADMIN.username || username === currentUser.username) { showNotification('ลบไม่ได้', 'error'); return; }
       requestConfirm('ลบผู้ใช้งาน', `ยืนยันลบ ${username}?`, async () => {
           try {
             await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'app_users', id));
@@ -452,7 +406,6 @@ export default function App() {
       });
   };
 
-  // --- Data Management ---
   const handleSeedData = async () => { 
       requestConfirm('กู้คืนข้อมูล', 'ยืนยัน?', async () => { 
           try {
@@ -476,10 +429,8 @@ export default function App() {
   };
 
   const handleDeleteTeam = (id) => requestConfirm('ลบทีม', 'ยืนยัน?', async () => { 
-      try {
-        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', id)); 
-        setConfirmModal(null); 
-      } catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
+      try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', id)); setConfirmModal(null); } 
+      catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
   });
 
   const handleAddMember = async (tid) => { 
@@ -488,34 +439,27 @@ export default function App() {
           try {
               const upd = [...(t.members||[]), { id: `m${Date.now()}`, ...newMember }]; 
               await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', tid), { members: upd }); 
-              setAddingMemberTo(null); 
-              setNewMember({ name: '', joinDate: '', resignDate: '' }); 
-              showNotification('เพิ่มสมาชิกสำเร็จ');
+              setAddingMemberTo(null); setNewMember({ name: '', joinDate: '', resignDate: '' }); showNotification('เพิ่มสมาชิกสำเร็จ');
           } catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
       } 
   };
   
   const handleUpdateMember = async () => {
       if (!editingMember) return;
-      const { teamId, memberId, data } = editingMember;
-      const team = teams.find(t => t.id === teamId);
+      const team = teams.find(t => t.id === editingMember.teamId);
       if (team) {
           try {
-              const updatedMembers = team.members.map(m => m.id === memberId ? { ...m, ...data } : m);
-              await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', teamId), { members: updatedMembers });
-              setEditingMember(null);
-              showNotification('อัปเดตข้อมูลสำเร็จ');
+              const updatedMembers = team.members.map(m => m.id === editingMember.memberId ? { ...m, ...editingMember.data } : m);
+              await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', editingMember.teamId), { members: updatedMembers });
+              setEditingMember(null); showNotification('อัปเดตข้อมูลสำเร็จ');
           } catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
       }
   };
   
   const handleDeleteMember = (tid, mid) => requestConfirm('ลบสมาชิก', 'ยืนยัน?', async () => { 
       const t = teams.find(x => x.id === tid); 
-      try {
-          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', tid), { members: t.members.filter(m => m.id !== mid) }); 
-          setConfirmModal(null); 
-          showNotification('ลบสมาชิกสำเร็จ');
-      } catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
+      try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', tid), { members: t.members.filter(m => m.id !== mid) }); setConfirmModal(null); showNotification('ลบสมาชิกสำเร็จ'); } 
+      catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
   });
   
   const initiateAddJob = () => { 
@@ -529,241 +473,88 @@ export default function App() {
       if (!newJobDate) return; 
       try {
           await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'jobs'), { 
-              date: newJobDate, 
-              customer: '', 
-              location: '', 
-              orderNo: '', 
-              timeSlot: newJobTimeSlot, 
-              type: 'install', 
-              rails: 0, 
-              selectedTechs: [], 
-              createdAt: new Date().toISOString(), 
-              orderIndex: Date.now() 
+              date: newJobDate, customer: '', location: '', orderNo: '', timeSlot: newJobTimeSlot, type: 'install', rails: 0, selectedTechs: [], createdAt: new Date().toISOString(), orderIndex: Date.now() 
           }); 
-          setShowAddJobModal(false); 
-          showNotification('เพิ่มงานสำเร็จ');
+          setShowAddJobModal(false); showNotification('เพิ่มงานสำเร็จ');
       } catch(e) { handlePermissionError(e); showNotification(`Error adding job: ${e.message}`, 'error'); }
   };
 
-  const updateJob = async (id, f, v) => {
-      try {
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', id), { [f]: v });
-      } catch(e) { handlePermissionError(e); showNotification(`Update failed: ${e.message}`, 'error'); }
-  };
-
-  const removeJob = async (id) => {
-      try {
-        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', id));
-      } catch(e) { handlePermissionError(e); showNotification(`Delete failed: ${e.message}`, 'error'); }
-  };
-
+  const updateJob = async (id, f, v) => { try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', id), { [f]: v }); } catch(e) { handlePermissionError(e); showNotification(`Update failed: ${e.message}`, 'error'); } };
+  const removeJob = async (id) => { try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', id)); } catch(e) { handlePermissionError(e); showNotification(`Delete failed: ${e.message}`, 'error'); } };
   const moveJob = async (id, dir, list) => { 
       const idx = list.findIndex(j => j.id === id); 
       if(idx === -1 || idx+dir < 0 || idx+dir >= list.length) return; 
       const j1 = list[idx], j2 = list[idx+dir]; 
       let o1 = j1.orderIndex || Date.now(), o2 = j2.orderIndex || (Date.now()-1000); 
       if(o1 === o2) o1 += 1; 
-      try {
-          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', j1.id), { orderIndex: o2 }); 
-          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', j2.id), { orderIndex: o1 }); 
-      } catch(e) { handlePermissionError(e); showNotification(`Move failed: ${e.message}`, 'error'); }
+      try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', j1.id), { orderIndex: o2 }); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', j2.id), { orderIndex: o1 }); } 
+      catch(e) { handlePermissionError(e); showNotification(`Move failed: ${e.message}`, 'error'); }
   };
-
-  const toggleTech = async (jid, tid) => { 
-      const j = jobs.find(x => x.id === jid); 
-      const sel = j.selectedTechs || []; 
-      try {
-          await updateJob(jid, 'selectedTechs', sel.includes(tid) ? sel.filter(x => x!==tid) : [...sel, tid]); 
-      } catch(e) { handlePermissionError(e); showNotification(`Toggle failed: ${e.message}`, 'error'); }
-  };
-
-  const handleSavePeriod = async () => { 
-      if(newPeriodName) { 
-          try {
-              await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'savedPeriods'), { ...period, name: newPeriodName }); 
-              setNewPeriodName(''); 
-              setShowPeriodManager(false); 
-              showNotification('บันทึกรอบสำเร็จ');
-          } catch(e) { handlePermissionError(e); showNotification(`Save failed: ${e.message}`, 'error'); }
-      } 
-  };
-  
-  const handleDeletePeriod = (id) => requestConfirm('ลบ', 'ยืนยัน?', async () => { 
-      try {
-          await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'savedPeriods', id)); 
-          setConfirmModal(null); 
-      } catch(e) { handlePermissionError(e); showNotification(`Delete failed: ${e.message}`, 'error'); }
-  });
-
-  const handleUpdatePeriod = async () => {
-    if (!editingPeriod || !editingPeriod.name) return;
-    try {
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'savedPeriods', editingPeriod.id), {
-            name: editingPeriod.name,
-            start: editingPeriod.start,
-            end: editingPeriod.end
-        });
-        setEditingPeriod(null);
-        showNotification('อัปเดตรอบสำเร็จ');
-    } catch(e) { handlePermissionError(e); showNotification(`Update failed: ${e.message}`, 'error'); }
-  };
+  const toggleTech = async (jid, tid) => { const j = jobs.find(x => x.id === jid); const sel = j.selectedTechs || []; try { await updateJob(jid, 'selectedTechs', sel.includes(tid) ? sel.filter(x => x!==tid) : [...sel, tid]); } catch(e) { handlePermissionError(e); showNotification(`Toggle failed: ${e.message}`, 'error'); } };
+  const handleSavePeriod = async () => { if(newPeriodName) { try { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'savedPeriods'), { ...period, name: newPeriodName }); setNewPeriodName(''); setShowPeriodManager(false); showNotification('บันทึกรอบสำเร็จ'); } catch(e) { handlePermissionError(e); showNotification(`Save failed: ${e.message}`, 'error'); } } };
+  const handleDeletePeriod = (id) => requestConfirm('ลบ', 'ยืนยัน?', async () => { try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'savedPeriods', id)); setConfirmModal(null); } catch(e) { handlePermissionError(e); showNotification(`Delete failed: ${e.message}`, 'error'); } });
+  const handleUpdatePeriod = async () => { if (!editingPeriod || !editingPeriod.name) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'savedPeriods', editingPeriod.id), { name: editingPeriod.name, start: editingPeriod.start, end: editingPeriod.end }); setEditingPeriod(null); showNotification('อัปเดตรอบสำเร็จ'); } catch(e) { handlePermissionError(e); showNotification(`Update failed: ${e.message}`, 'error'); } };
 
   // --- CALCULATION LOGIC ---
   const calculatedData = useMemo(() => {
     try {
         const periodJobs = jobs.filter(j => j.date >= period.start && j.date <= period.end).sort((a, b) => (b.orderIndex || 0) - (a.orderIndex || 0));
-        
-        const dailyTeamIncentive = {}; 
-        let totalIncentive = 0;
-        let totalRails = 0;
-        let totalMeasureJobs = 0;
-
+        const dailyTeamIncentive = {}; let totalIncentive = 0; let totalRails = 0; let totalMeasureJobs = 0;
         periodJobs.forEach(job => {
-            let val = 0; 
-            const cnt = (job.selectedTechs || []).length; 
-            const rails = parseInt(job.rails) || 0;
-            
-            // Stats
+            let val = 0; const cnt = (job.selectedTechs || []).length; const rails = parseInt(job.rails) || 0;
             const excludedTypes = ['measure', 'travel_go', 'travel_back', 'fix_free'];
-            if (!excludedTypes.includes(job.type)) {
-                totalRails += rails;
-            }
-            if (job.type === 'measure') {
-                totalMeasureJobs += 1;
-            }
-
+            if (!excludedTypes.includes(job.type)) totalRails += rails;
+            if (job.type === 'measure') totalMeasureJobs += 1;
             if (cnt > 0) {
                 if (job.type === 'measure') val = 250 * cnt;
                 else if (['travel_go', 'travel_back', 'fix_free'].includes(job.type)) val = 0;
                 else val = (250 * cnt) + (rails > 10 ? (rails - 10) * 20 : 0);
             }
-            job.calculatedValue = val; 
-            totalIncentive += val;
-
+            job.calculatedValue = val; totalIncentive += val;
             if (cnt > 0) {
-                const teamsInvolved = {}; 
-                let totalTechsInJob = 0;
-                (job.selectedTechs || []).forEach(tid => {
-                    const t = teams.find(x => (x.members||[]).some(m => m.id === tid));
-                    if (t) { teamsInvolved[t.id] = (teamsInvolved[t.id] || 0) + 1; totalTechsInJob++; }
-                });
-                
-                const date = job.date;
-                if (!dailyTeamIncentive[date]) dailyTeamIncentive[date] = {};
-
+                const teamsInvolved = {}; let totalTechsInJob = 0;
+                (job.selectedTechs || []).forEach(tid => { const t = teams.find(x => (x.members||[]).some(m => m.id === tid)); if (t) { teamsInvolved[t.id] = (teamsInvolved[t.id] || 0) + 1; totalTechsInJob++; } });
+                const date = job.date; if (!dailyTeamIncentive[date]) dailyTeamIncentive[date] = {};
                 Object.keys(teamsInvolved).forEach(teamId => {
-                    const teamTechCount = teamsInvolved[teamId];
-                    const teamShare = (val * teamTechCount) / totalTechsInJob;
-                    
+                    const teamTechCount = teamsInvolved[teamId]; const teamShare = (val * teamTechCount) / totalTechsInJob;
                     if (!dailyTeamIncentive[date][teamId]) dailyTeamIncentive[date][teamId] = { amount: 0, rails: 0, measures: 0 };
                     dailyTeamIncentive[date][teamId].amount += teamShare;
-
-                    const totalTeams = Object.keys(teamsInvolved).length;
-                    if (!excludedTypes.includes(job.type)) {
-                        dailyTeamIncentive[date][teamId].rails += (rails / totalTeams);
-                    }
-                    if (job.type === 'measure') {
-                        dailyTeamIncentive[date][teamId].measures += 1; 
-                    }
+                    if (!excludedTypes.includes(job.type)) dailyTeamIncentive[date][teamId].rails += (rails / Object.keys(teamsInvolved).length);
+                    if (job.type === 'measure') dailyTeamIncentive[date][teamId].measures += 1; 
                 });
             }
         });
-
         const daysInPeriod = getDaysArray(period.start, period.end);
         const periodWorkingDays = daysInPeriod.filter(d => !holidays.includes(d)).length;
-        
         const teamStats = teams.map(team => {
-            const membersList = team.members || [];
-            const memberEarnings = {}; 
-            const memberLeavesList = {};
-
+            const membersList = team.members || []; const memberEarnings = {}; const memberLeavesList = {};
             membersList.forEach(m => { memberEarnings[m.id] = 0; memberLeavesList[m.id] = []; });
-            
-            let teamTotalEarned = 0;
-            let teamTotalRails = 0;
-            let teamTotalMeasures = 0;
-            
+            let teamTotalEarned = 0; let teamTotalRails = 0; let teamTotalMeasures = 0;
             daysInPeriod.forEach(day => {
                 const dayStats = dailyTeamIncentive[day]?.[team.id];
-                if (dayStats) {
-                    teamTotalRails += dayStats.rails;
-                    teamTotalMeasures += dayStats.measures;
-                }
-
+                if (dayStats) { teamTotalRails += dayStats.rails; teamTotalMeasures += dayStats.measures; }
                 if (holidays.includes(day)) return;
-
-                membersList.forEach(m => {
-                    const leave = leaves.find(l => l.techId === m.id && l.date === day);
-                    if (leave) memberLeavesList[m.id].push({ date: day, type: leave.type });
-                });
-
+                membersList.forEach(m => { const leave = leaves.find(l => l.techId === m.id && l.date === day); if (leave) memberLeavesList[m.id].push({ date: day, type: leave.type }); });
                 const dailyPot = dayStats?.amount || 0;
-                
-                const activeMembers = membersList.filter(m => {
-                    const hasJoined = m.joinDate <= day;
-                    const hasNotResigned = !m.resignDate || m.resignDate > day; 
-                    return hasJoined && hasNotResigned;
-                });
-
-                const eligibleMembers = activeMembers.filter(m => {
-                    const leave = leaves.find(l => l.techId === m.id && l.date === day);
-                    if (!leave) return true; 
-                    if (leave.type === 'vacation') return true; 
-                    return false; 
-                });
-
-                const divisor = eligibleMembers.length;
-                const sharePerHead = divisor > 0 ? dailyPot / divisor : 0;
-
+                const activeMembers = membersList.filter(m => { const hasJoined = m.joinDate <= day; const hasNotResigned = !m.resignDate || m.resignDate > day; return hasJoined && hasNotResigned; });
+                const eligibleMembers = activeMembers.filter(m => { const leave = leaves.find(l => l.techId === m.id && l.date === day); if (!leave) return true; if (leave.type === 'vacation') return true; return false; });
+                const sharePerHead = eligibleMembers.length > 0 ? dailyPot / eligibleMembers.length : 0;
                 if (dailyPot > 0) teamTotalEarned += dailyPot;
-
-                activeMembers.forEach(m => {
-                    const isEligible = eligibleMembers.some(em => em.id === m.id);
-                    if (isEligible) {
-                        memberEarnings[m.id] += sharePerHead;
-                    }
-                });
+                activeMembers.forEach(m => { if (eligibleMembers.some(em => em.id === m.id)) memberEarnings[m.id] += sharePerHead; });
             });
-
-            return { 
-                ...team, 
-                totalEarned: teamTotalEarned, 
-                totalRails: teamTotalRails,
-                totalMeasures: teamTotalMeasures,
-                members: membersList.map(m => ({ 
-                    ...m, 
-                    incentive: memberEarnings[m.id],
-                    workDays: daysInPeriod.filter(d => !holidays.includes(d) && m.joinDate <= d && (!m.resignDate || m.resignDate > d) && !leaves.find(l => l.techId === m.id && l.date === d)).length,
-                    leaves: memberLeavesList[m.id]
-                })) 
-            };
+            return { ...team, totalEarned: teamTotalEarned, totalRails: teamTotalRails, totalMeasures: teamTotalMeasures, members: membersList.map(m => ({ ...m, incentive: memberEarnings[m.id], workDays: daysInPeriod.filter(d => !holidays.includes(d) && m.joinDate <= d && (!m.resignDate || m.resignDate > d) && !leaves.find(l => l.techId === m.id && l.date === d)).length, leaves: memberLeavesList[m.id] })) };
         });
-        
         const individualStats = teamStats.flatMap(t => (t.members || []).map(m => ({...m, teamName: t.name}))).sort((a,b) => b.incentive - a.incentive);
         const totalTechs = teamStats.reduce((acc, t) => acc + (t.members || []).length, 0);
-
         return { periodJobs, totalIncentive, teamStats, individualStats, totalTechs, periodWorkingDays, totalRails, totalMeasureJobs };
-    } catch (e) { 
-        console.error("Calc Error", e);
-        return { periodJobs: [], totalIncentive: 0, teamStats: [], individualStats: [], totalTechs: 0, periodWorkingDays: 0, totalRails: 0, totalMeasureJobs: 0 }; 
-    }
+    } catch (e) { console.error("Calc Error", e); return { periodJobs: [], totalIncentive: 0, teamStats: [], individualStats: [], totalTechs: 0, periodWorkingDays: 0, totalRails: 0, totalMeasureJobs: 0 }; }
   }, [jobs, teams, holidays, leaves, period]);
 
   const exportToCSV = () => {
       const headers = ["วันที่", "ลูกค้า", "สถานที่", "Order No", "เวลา", "ประเภทงาน", "จำนวนราง", "ทีมช่าง", "รายชื่อช่าง", "ค่า Incentive"];
       const rows = calculatedData.periodJobs.map(j => {
           const tNames = teams.flatMap(t => t.members || []).filter(m => (j.selectedTechs || []).includes(m.id)).map(m => m.name).join(", ");
-          return [
-              j.date, 
-              `"${(j.customer||'').replace(/"/g,'""')}"`, 
-              `"${(j.location||'').replace(/"/g,'""')}"`,
-              `"${(j.orderNo||'').replace(/"/g,'""')}"`,
-              j.timeSlot || `${j.timeIn || ''} - ${j.timeOut || ''}`,
-              JOB_TYPES.find(t => t.id === j.type)?.label || j.type, 
-              j.rails, 
-              `"${tNames}"`, 
-              j.calculatedValue
-          ].join(",");
+          return [j.date, `"${(j.customer||'').replace(/"/g,'""')}"`, `"${(j.location||'').replace(/"/g,'""')}"`, `"${(j.orderNo||'').replace(/"/g,'""')}"`, j.timeSlot || `${j.timeIn || ''} - ${j.timeOut || ''}`, JOB_TYPES.find(t => t.id === j.type)?.label || j.type, j.rails, `"${tNames}"`, j.calculatedValue].join(",");
       });
       const blob = new Blob(["\uFEFF" + [headers.join(","), ...rows].join("\n")], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `report.csv`; document.body.appendChild(link); link.click(); document.body.removeChild(link);
@@ -773,94 +564,42 @@ export default function App() {
 
   const permissionErrorBanner = permissionError && (
       <div className="fixed bottom-4 left-4 z-[2000] max-w-md bg-red-50 border border-red-200 shadow-2xl rounded-xl p-4 animate-bounce-in flex flex-col gap-3">
-           <div>
-               <h3 className="font-bold text-red-700 flex items-center gap-2"><AlertTriangle size={16}/> เชื่อมต่อ Database ไม่ได้</h3>
-               <p className="text-xs text-red-600 mt-1">ต้องตั้งค่า Security Rules ใน Firebase Console ก่อนจึงจะใช้งานได้ครบถ้วน</p>
-           </div>
-           
-           <div className="bg-white p-2 rounded text-[10px] text-gray-500 border overflow-x-auto">
-               <code>allow read, write: if request.auth != null;</code>
-           </div>
-
-           <div className="flex gap-2">
-             <button onClick={() => window.open('https://console.firebase.google.com/', '_blank')} className="bg-red-600 text-white px-3 py-1.5 rounded text-xs flex-1">ไปที่ Console</button>
-             <button onClick={() => setPermissionError(false)} className="bg-gray-200 text-gray-700 px-3 py-1.5 rounded text-xs">ปิดไว้ก่อน (Offline)</button>
-           </div>
+           <div><h3 className="font-bold text-red-700 flex items-center gap-2"><AlertTriangle size={16}/> เชื่อมต่อ Database ไม่ได้</h3><p className="text-xs text-red-600 mt-1">ต้องตั้งค่า Security Rules ใน Firebase Console ก่อนจึงจะใช้งานได้ครบถ้วน</p></div>
+           <div className="bg-white p-2 rounded text-[10px] text-gray-500 border overflow-x-auto"><code>allow read, write: if request.auth != null;</code></div>
+           <div className="flex gap-2"><button onClick={() => window.open('https://console.firebase.google.com/', '_blank')} className="bg-red-600 text-white px-3 py-1.5 rounded text-xs flex-1">ไปที่ Console</button><button onClick={() => setPermissionError(false)} className="bg-gray-200 text-gray-700 px-3 py-1.5 rounded text-xs">ปิดไว้ก่อน (Offline)</button></div>
       </div>
   );
 
-  // --- LOGIN SCREEN ---
   if (!currentUser) return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-4 font-sans" style={{ fontFamily: '"Sarabun", sans-serif' }}>
-           <style>{`@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;700&display=swap');`}</style>
+           <style>{`@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;700&display=swap'); .animate-bounce-in { animation: bounceIn 0.5s both; } @keyframes bounceIn { 0% { opacity: 0; transform: scale(0.3); } 50% { opacity: 1; transform: scale(1.05); } 70% { transform: scale(0.9); } 100% { transform: scale(1); } }`}</style>
            {notification && <div className="fixed top-4 bg-red-500 text-white px-4 py-2 rounded shadow">{notification.message}</div>}
-           
            {permissionErrorBanner}
-
            <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md text-center">
-               <div className="mb-6 flex justify-center">
-                   <div className="w-32 h-32 border-4 border-black flex items-center justify-center p-2 bg-white">
-                       <div className="text-center">
-                           <h1 className="text-2xl font-serif font-bold tracking-widest leading-none">PASAYA</h1>
-                           <p className="text-[8px] tracking-[0.2em] font-sans font-bold mt-1">CURTAIN CENTER</p>
-                       </div>
-                   </div>
-               </div>
+               <div className="mb-6 flex justify-center"><div className="w-32 h-32 border-4 border-black flex items-center justify-center p-2 bg-white"><div className="text-center"><h1 className="text-2xl font-serif font-bold tracking-widest leading-none">PASAYA</h1><p className="text-[8px] tracking-[0.2em] font-sans font-bold mt-1">CURTAIN CENTER</p></div></div></div>
                <h2 className="text-xl font-bold text-gray-800 mb-6">Incentive Calculator System</h2>
                <form onSubmit={handleLogin} className="space-y-4 text-left">
-                   <div>
-                       <label className="text-xs font-bold text-gray-600 block mb-1">Username</label>
-                       <div className="relative">
-                           <input 
-                               type="text" 
-                               required 
-                               placeholder="Username" 
-                               className="w-full border rounded-lg px-4 py-2 pl-10 focus:ring-2 focus:ring-black focus:outline-none"
-                               value={usernameInput} 
-                               onChange={e => setUsernameInput(e.target.value)}
-                           />
-                           <Users className="absolute left-3 top-2.5 text-gray-400" size={16}/>
-                       </div>
-                   </div>
-                   <div>
-                       <label className="text-xs font-bold text-gray-600 block mb-1">Password</label>
-                       <div className="relative">
-                           <input 
-                               type="password" 
-                               required 
-                               placeholder="Password" 
-                               className="w-full border rounded-lg px-4 py-2 pl-10 focus:ring-2 focus:ring-black focus:outline-none"
-                               value={passwordInput} 
-                               onChange={e => setPasswordInput(e.target.value)}
-                           />
-                           <Key className="absolute left-3 top-2.5 text-gray-400" size={16}/>
-                       </div>
-                   </div>
-                   <button type="submit" className="w-full bg-black text-white font-bold py-2 rounded-lg hover:bg-gray-800 flex items-center justify-center gap-2 transition-all">
-                        เข้าสู่ระบบ <ArrowUp className="rotate-90" size={16}/>
-                   </button>
+                   <div><label className="text-xs font-bold text-gray-600 block mb-1">Username</label><div className="relative"><input type="text" required placeholder="Username" className="w-full border rounded-lg px-4 py-2 pl-10 focus:ring-2 focus:ring-black focus:outline-none" value={usernameInput} onChange={e => setUsernameInput(e.target.value)}/><Users className="absolute left-3 top-2.5 text-gray-400" size={16}/></div></div>
+                   <div><label className="text-xs font-bold text-gray-600 block mb-1">Password</label><div className="relative"><input type="password" required placeholder="Password" className="w-full border rounded-lg px-4 py-2 pl-10 focus:ring-2 focus:ring-black focus:outline-none" value={passwordInput} onChange={e => setPasswordInput(e.target.value)}/><Key className="absolute left-3 top-2.5 text-gray-400" size={16}/></div></div>
+                   <button type="submit" className="w-full bg-black text-white font-bold py-2 rounded-lg hover:bg-gray-800 flex items-center justify-center gap-2 transition-all">เข้าสู่ระบบ <ArrowUp className="rotate-90" size={16}/></button>
                </form>
            </div>
-           
-           <div className="mt-8 text-xs text-gray-400">
-               v6.0.2 • Pasaya Curtain Center
-           </div>
+           <div className="mt-8 text-xs text-gray-400">v6.0.2 • Pasaya Curtain Center</div>
       </div>
   );
 
-  const printStyles = `@media print { @page { size: A4; margin: 1cm; } body, html, #root { background: white !important; height: auto !important; overflow: visible !important; } .no-print { display: none !important; } .print-only { display: block !important; position: absolute; top: 0; left: 0; width: 100%; } table { width: 100% !important; border-collapse: collapse !important; } th, td { border: 1px solid #ddd !important; padding: 4px !important; } } .print-only { display: none; }`;
+  const styles = `
+    @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;700&display=swap');
+    .animate-bounce-in { animation: bounceIn 0.5s both; }
+    @keyframes bounceIn { 0% { opacity: 0; transform: scale(0.3); } 50% { opacity: 1; transform: scale(1.05); } 70% { transform: scale(0.9); } 100% { transform: scale(1); } }
+    @media print { @page { size: A4; margin: 1cm; } body, html, #root { background: white !important; height: auto !important; overflow: visible !important; } .no-print { display: none !important; } .print-only { display: block !important; position: absolute; top: 0; left: 0; width: 100%; } table { width: 100% !important; border-collapse: collapse !important; } th, td { border: 1px solid #ddd !important; padding: 4px !important; } } .print-only { display: none; }
+  `;
 
   return (
     <div className="min-h-screen bg-white text-sm font-sans text-gray-800 pb-20 relative" style={{ fontFamily: '"Sarabun", sans-serif' }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;700&display=swap');
-        ${printStyles}
-      `}</style>
-      
+      <style>{styles}</style>
       {notification && <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-white flex items-center gap-2 animate-bounce-in ${notification.type === 'error' ? 'bg-red-500' : 'bg-green-600'}`}>{notification.type === 'error' ? <AlertCircle size={20}/> : <CheckCircle size={20}/>}<span>{notification.message}</span></div>}
-      
       {permissionErrorBanner}
-
       {confirmModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4"><div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6"><h3 className="text-lg font-bold mb-2">{confirmModal.title}</h3><p className="text-gray-600 mb-6">{confirmModal.message}</p><div className="flex gap-3 justify-end"><button onClick={()=>setConfirmModal(null)} className="px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button><button onClick={confirmModal.onConfirm} className="px-4 py-2 bg-red-600 text-white rounded-lg">ยืนยัน</button></div></div></div>}
       {showAddJobModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4"><div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6"><h3 className="text-lg font-bold mb-4">เพิ่มงานใหม่</h3><div className="space-y-4"><div className="space-y-1"><label className="block text-xs font-bold text-gray-500">เลือกวันที่:</label><input type="date" className="w-full border rounded p-2 text-lg font-bold" value={newJobDate} onChange={e=>setNewJobDate(e.target.value)}/></div><div className="space-y-1"><label className="block text-xs font-bold text-gray-500">เลือกเวลา:</label><select className="w-full border rounded p-2 text-lg font-bold" value={newJobTimeSlot} onChange={e=>setNewJobTimeSlot(e.target.value)}>{TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}</select></div></div><div className="flex gap-3 justify-end mt-6"><button onClick={()=>setShowAddJobModal(false)} className="px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button><button onClick={confirmAddJob} className="px-4 py-2 bg-blue-600 text-white rounded-lg">ตกลง</button></div></div></div>}
       {activeLeaveCell && (<div ref={leaveMenuRef} className="absolute bg-white shadow-xl border rounded-lg p-1 z-[999] min-w-[120px]" style={{ top: activeLeaveCell.top, left: activeLeaveCell.left }}>{LEAVE_TYPES.map(type => (<button key={type.id} onClick={() => selectLeaveType(type.id)} className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 rounded flex items-center gap-2 ${type.color.replace('bg-', 'text-')}`}><span className={`w-4 h-4 flex items-center justify-center rounded-full text-[9px] ${type.color}`}>{type.short}</span>{type.label}</button>))}<div className="h-px bg-gray-100 my-1"></div><button onClick={() => selectLeaveType('clear')} className="w-full text-left px-3 py-2 text-xs text-red-500 hover:bg-red-50 rounded">ยกเลิกวันลา</button></div>)}
@@ -899,8 +638,31 @@ export default function App() {
 
           {activeTab === 'jobs' && (
              <div className="bg-white rounded-xl shadow border overflow-hidden">
-                 <div className="p-4 border-b flex justify-between items-center bg-gray-50"><h3 className="font-bold text-gray-700">รายการงาน</h3><div className="flex gap-2"><button onClick={exportToCSV} className="bg-green-600 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1"><FileSpreadsheet size={14}/> CSV</button><button onClick={initiateAddJob} className="bg-black text-white px-3 py-1.5 rounded text-xs flex items-center gap-1"><Plus size={14}/> เพิ่ม</button></div></div>
-                 <div className="overflow-x-auto"><table className="w-full text-left"><thead className="bg-gray-100 text-xs text-gray-500 font-bold uppercase"><tr><th className="p-3 text-center">#</th><th className="p-3">วันที่/เวลา</th><th className="p-3">รายละเอียด</th><th className="p-3">งาน</th><th className="p-3 text-center">ราง</th><th className="p-3">ทีมช่าง</th><th className="p-3 text-right">Incentive</th><th className="p-3 text-center">ลำดับ</th><th className="p-3"></th></tr></thead><tbody className="divide-y text-xs">{calculatedData.periodJobs.map((j, i) => (<tr key={j.id} className="hover:bg-gray-50"><td className="p-3 text-center text-gray-400">{i+1}</td><td className="p-3 w-36 align-top"><input type="date" value={j.date} onChange={e=>updateJob(j.id,'date',e.target.value)} className="border rounded p-1 w-full mb-1"/><select className="border rounded p-1 w-full text-[10px]" value={j.timeSlot || DEFAULT_TIME_SLOT} onChange={e=>updateJob(j.id,'timeSlot',e.target.value)}>{TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}</select></td><td className="p-3 w-48 align-top space-y-1"><input placeholder="Order No." value={j.orderNo || ''} onChange={e=>updateJob(j.id,'orderNo',e.target.value)} className="border rounded p-1 w-full bg-blue-50 font-bold"/><input placeholder="ลูกค้า" value={j.customer||''} onChange={e=>updateJob(j.id,'customer',e.target.value)} className="border rounded p-1 w-full"/><input placeholder="สถานที่" value={j.location||''} onChange={e=>updateJob(j.id,'location',e.target.value)} className="border rounded p-1 w-full"/></td><td className="p-3 align-top"><select value={j.type} onChange={e=>updateJob(j.id,'type',e.target.value)} className="border rounded p-1 w-full">{JOB_TYPES.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}</select></td><td className="p-3 align-top"><input type="number" value={j.rails} onChange={e=>updateJob(j.id,'rails',e.target.value)} className="border rounded p-1 w-12 text-center"/></td><td className="p-3 align-top"><div className="flex flex-wrap gap-1">{teams.map(t => (
+                 <div className="p-4 border-b flex justify-between items-center bg-gray-50 gap-4">
+                     <h3 className="font-bold text-gray-700 whitespace-nowrap">รายการงาน</h3>
+                     
+                     <div className="flex-1 max-w-md relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                        <input 
+                            type="text" 
+                            placeholder="ค้นหา: ชื่อลูกค้า, เลข Order, วันที่..." 
+                            className="w-full pl-9 pr-4 py-1.5 border rounded-lg text-xs focus:outline-none focus:border-blue-500 transition-colors"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                        />
+                        {searchQuery && (
+                            <button 
+                                onClick={() => setSearchQuery('')}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                            >
+                                <X size={14} />
+                            </button>
+                        )}
+                     </div>
+
+                     <div className="flex gap-2"><button onClick={exportToCSV} className="bg-green-600 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1"><FileSpreadsheet size={14}/> CSV</button><button onClick={initiateAddJob} className="bg-black text-white px-3 py-1.5 rounded text-xs flex items-center gap-1"><Plus size={14}/> เพิ่ม</button></div>
+                 </div>
+                 <div className="overflow-x-auto"><table className="w-full text-left"><thead className="bg-gray-100 text-xs text-gray-500 font-bold uppercase"><tr><th className="p-3 text-center">#</th><th className="p-3">วันที่/เวลา</th><th className="p-3">รายละเอียด</th><th className="p-3">งาน</th><th className="p-3 text-center">ราง</th><th className="p-3">ทีมช่าง</th><th className="p-3 text-right">Incentive</th><th className="p-3 text-center">ลำดับ</th><th className="p-3"></th></tr></thead><tbody className="divide-y text-xs">{calculatedData.periodJobs.filter(j => { const q = searchQuery.toLowerCase(); return !q || (j.customer || '').toLowerCase().includes(q) || (j.orderNo || '').toLowerCase().includes(q) || (j.date || '').includes(q); }).map((j, i) => (<tr key={j.id} className="hover:bg-gray-50"><td className="p-3 text-center text-gray-400">{i+1}</td><td className="p-3 w-36 align-top"><input type="date" value={j.date} onChange={e=>updateJob(j.id,'date',e.target.value)} className="border rounded p-1 w-full mb-1"/><select className="border rounded p-1 w-full text-[10px]" value={j.timeSlot || DEFAULT_TIME_SLOT} onChange={e=>updateJob(j.id,'timeSlot',e.target.value)}>{TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}</select></td><td className="p-3 w-48 align-top space-y-1"><input placeholder="Order No." value={j.orderNo || ''} onChange={e=>updateJob(j.id,'orderNo',e.target.value)} className="border rounded p-1 w-full bg-blue-50 font-bold"/><input placeholder="ลูกค้า" value={j.customer||''} onChange={e=>updateJob(j.id,'customer',e.target.value)} className="border rounded p-1 w-full"/><input placeholder="สถานที่" value={j.location||''} onChange={e=>updateJob(j.id,'location',e.target.value)} className="border rounded p-1 w-full"/></td><td className="p-3 align-top"><select value={j.type} onChange={e=>updateJob(j.id,'type',e.target.value)} className="border rounded p-1 w-full">{JOB_TYPES.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}</select></td><td className="p-3 align-top"><input type="number" value={j.rails} onChange={e=>updateJob(j.id,'rails',e.target.value)} className="border rounded p-1 w-12 text-center"/></td><td className="p-3 align-top"><div className="flex flex-wrap gap-1">{teams.map(t => (
                    <div key={t.id} className="border p-1 rounded bg-white">
                        <div className="font-bold text-[9px] mb-1">{t.name}</div>
                        <div className="flex gap-1 flex-wrap">
@@ -967,140 +729,6 @@ export default function App() {
                       </div>
                   ))}
                   {isAddingTeam ? (<div className="bg-white p-4 rounded-xl shadow border"><input placeholder="ชื่อทีม" className="border w-full p-2 mb-2 rounded" autoFocus value={newTeamName} onChange={e=>setNewTeamName(e.target.value)}/><div className="flex gap-2"><button onClick={handleAddTeam} className="bg-black text-white flex-1 py-2 rounded">สร้าง</button><button onClick={()=>setIsAddingTeam(false)} className="bg-gray-100 flex-1 py-2 rounded">ยกเลิก</button></div></div>) : <button onClick={()=>setIsAddingTeam(true)} className="bg-gray-50 border-2 border-dashed rounded-xl flex items-center justify-center p-8 text-gray-400 hover:bg-white hover:border-black hover:text-black transition-all"><Plus size={32}/></button>}
-              </div>
-          )}
-
-          {activeTab === 'calendar' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-white p-6 rounded-xl shadow border">
-                      <h3 className="font-bold mb-4 flex items-center gap-2"><Calendar className="text-red-500"/> วันหยุดบริษัท</h3>
-                      <div className="grid grid-cols-7 text-center text-xs gap-1 mb-2">{['อา','จ','อ','พ','พฤ','ศ','ส'].map(d => (<div key={d} className="font-bold text-gray-400 py-1">{d}</div>))}</div>
-                      <div className="grid grid-cols-7 text-center text-xs gap-1">
-                          {(() => {
-                              const days = getDaysArray(period.start, period.end);
-                              if (days.length === 0) return null;
-                              const [y, m, d] = days[0].split('-').map(Number);
-                              const firstDate = new Date(y, m - 1, d);
-                              const startOffset = firstDate.getDay(); 
-                              return (
-                                  <>
-                                    {Array(startOffset).fill(null).map((_,i)=><div key={`b${i}`} className="p-2 bg-gray-50/50 border border-transparent"></div>)}
-                                    {days.map(dStr => {
-                                        const dayNum = parseInt(dStr.split('-')[2], 10);
-                                        return <button key={dStr} onClick={()=>handleAddHoliday(dStr)} className={`p-2 rounded border flex flex-col items-center justify-center h-16 ${holidays.includes(dStr)?'bg-red-50 border-red-200 text-red-600 font-bold':'hover:bg-gray-50'}`}><span className="text-lg">{dayNum}</span></button>
-                                    })}
-                                  </>
-                              )
-                          })()}
-                      </div>
-                  </div>
-                  <div className="bg-white p-6 rounded-xl shadow border">
-                      <h3 className="font-bold mb-4 flex items-center gap-2"><Users className="text-orange-500"/> วันลาพนักงาน</h3>
-                      <div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr><th className="text-left sticky left-0 bg-white p-2 min-w-[100px]">ชื่อ</th>{getDaysArray(period.start, period.end).map(d=><th key={d} className="min-w-[30px] p-1 text-center bg-gray-50 border-b"><div className="text-[8px] text-gray-400">{parseInt(d.split('-')[2])}</div></th>)}</tr></thead>
-                      <tbody>
-                      {teams.flatMap(t => 
-                            (t.members||[]).map(m => ({ ...m, teamId: t.id }))
-                        ).map((m, flatIdx) => (
-                            <tr key={`${m.id}-${flatIdx}`} className="hover:bg-gray-50">
-                                <td className="py-2 sticky left-0 bg-white border-r font-medium pl-2">{m.name}</td>
-                                {getDaysArray(period.start, period.end).map(d => {
-                                    const l = leaves.find(x => x.techId === m.id && x.date === d);
-                                    const holiday = holidays.includes(d);
-                                    const leaveType = l ? LEAVE_TYPES.find(t => t.id === l.type) : null;
-                                    return (
-                                        <td 
-                                            key={d} 
-                                            onClick={(e) => !holiday && openLeaveMenu(e, m.id, d)} 
-                                            className={`border text-center cursor-pointer ${holiday ? 'bg-red-50' : ''} ${leaveType ? leaveType.color : ''}`}
-                                        >
-                                            {leaveType ? leaveType.short : ''}
-                                        </td>
-                                    );
-                                })}
-                            </tr>
-                        ))}
-                      </tbody></table></div>
-                  </div>
-              </div>
-          )}
-
-          {activeTab === 'admin' && (
-              <div className="bg-white p-6 rounded-xl shadow border max-w-2xl mx-auto">
-                  <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Shield className="text-blue-600"/> จัดการผู้ใช้งาน (Users)</h3>
-                  
-                  {/* Add New User Form */}
-                  <div className="flex flex-col gap-2 mb-6 bg-gray-50 p-4 rounded-lg border">
-                      <label className="text-xs font-bold text-gray-600">เพิ่มผู้ใช้งานใหม่</label>
-                      <div className="grid grid-cols-2 gap-2">
-                          <input 
-                            type="text" 
-                            placeholder="Username" 
-                            className="border rounded-lg px-4 py-2 text-sm" 
-                            value={newUser.username} 
-                            onChange={e => setNewUser({...newUser, username: e.target.value})} 
-                          />
-                          <input 
-                            type="text" 
-                            placeholder="Password" 
-                            className="border rounded-lg px-4 py-2 text-sm" 
-                            value={newUser.password} 
-                            onChange={e => setNewUser({...newUser, password: e.target.value})} 
-                          />
-                      </div>
-                      <div className="flex gap-2">
-                          <input 
-                            type="text" 
-                            placeholder="ชื่อเรียก (Display Name)" 
-                            className="flex-1 border rounded-lg px-4 py-2 text-sm" 
-                            value={newUser.name} 
-                            onChange={e => setNewUser({...newUser, name: e.target.value})} 
-                          />
-                          <select 
-                            className="border rounded-lg px-2 py-2 text-sm bg-white" 
-                            value={newUser.role} 
-                            onChange={e => setNewUser({...newUser, role: e.target.value})}
-                          >
-                              <option value="admin">Admin</option>
-                              <option value="super_admin">Super Admin</option>
-                          </select>
-                          <button onClick={handleAddAppUser} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2">
-                              <UserPlus size={16}/> เพิ่ม
-                          </button>
-                      </div>
-                  </div>
-
-                  {/* List Users */}
-                  <div className="space-y-2 mb-8">
-                      {appUsers.map((u, idx) => (
-                          <div key={idx} className="flex justify-between items-center p-3 bg-white rounded-lg border hover:bg-gray-50 transition-colors">
-                              <div>
-                                  <div className="text-sm font-medium text-gray-800">{u.username} <span className="text-gray-400 font-normal">({u.name})</span></div>
-                                  <div className="flex items-center gap-2 mt-1">
-                                      <span className={`text-[10px] px-2 py-0.5 rounded-full ${u.role === 'super_admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                                          {u.role === 'super_admin' ? 'Super Admin' : 'Admin'}
-                                      </span>
-                                      <span className="text-[10px] text-gray-400">Pass: {u.password}</span>
-                                  </div>
-                              </div>
-                              {u.username !== DEFAULT_SUPER_ADMIN.username && u.username !== currentUser.username && (
-                                  <button onClick={() => handleRemoveAppUser(u.id, u.username)} className="text-gray-300 hover:text-red-500 p-2 rounded hover:bg-red-50 transition-all">
-                                      <Trash2 size={16}/>
-                                  </button>
-                              )}
-                          </div>
-                      ))}
-                  </div>
-
-                  <div className="border-t pt-6">
-                      <h4 className="font-bold text-gray-700 mb-2 flex items-center gap-2"><Database size={16}/> จัดการฐานข้อมูล</h4>
-                      <div className="bg-orange-50 p-4 rounded-lg border border-orange-100 flex items-center justify-between">
-                          <div>
-                              <p className="text-sm font-bold text-orange-800">กู้คืนข้อมูลเริ่มต้น (Reset Data)</p>
-                              <p className="text-xs text-orange-600 mt-1">ใช้เมื่อข้อมูลทีมช่างหาย หรือต้องการเริ่มระบบใหม่</p>
-                          </div>
-                          <button onClick={handleSeedData} className="bg-orange-600 text-white px-4 py-2 rounded text-xs hover:bg-orange-700 transition-colors">กู้คืนข้อมูล</button>
-                      </div>
-                  </div>
               </div>
           )}
         </ErrorBoundary>
