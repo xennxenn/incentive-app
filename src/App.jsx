@@ -143,11 +143,14 @@ const getDaysArray = (start, end) => {
   const arr = [];
   try {
     const dt = new Date(start); const endDate = new Date(end);
+    // Simple validation to prevent infinite loops or crashes
+    if (isNaN(dt.getTime()) || isNaN(endDate.getTime())) return [];
+    
     while (dt <= endDate) {
         const y = dt.getFullYear(); const m = String(dt.getMonth() + 1).padStart(2, '0'); const d = String(dt.getDate()).padStart(2, '0');
         arr.push(`${y}-${m}-${d}`); dt.setDate(dt.getDate() + 1);
     }
-  } catch (e) { }
+  } catch (e) { console.error("Date calc error", e); }
   return arr;
 };
 const getCurrentMonthPeriod = () => {
@@ -172,7 +175,17 @@ export default function App() {
   const [appUsers, setAppUsers] = useState([]); 
 
   const [period, setPeriod] = useState(() => {
-      try { const saved = localStorage.getItem(`pasaya_period_${appId}`); return saved ? JSON.parse(saved) : getCurrentMonthPeriod(); } catch (e) { return getCurrentMonthPeriod(); }
+      try { 
+          const saved = localStorage.getItem(`pasaya_period_${appId}`); 
+          if (saved) {
+              const p = JSON.parse(saved);
+              // Validate period data to prevent crashes
+              if (p && p.start && p.end && !isNaN(new Date(p.start).getTime())) {
+                  return p;
+              }
+          }
+      } catch (e) {} 
+      return getCurrentMonthPeriod(); 
   });
   
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -584,7 +597,7 @@ export default function App() {
                    <button type="submit" className="w-full bg-black text-white font-bold py-2 rounded-lg hover:bg-gray-800 flex items-center justify-center gap-2 transition-all">เข้าสู่ระบบ <ArrowUp className="rotate-90" size={16}/></button>
                </form>
            </div>
-           <div className="mt-8 text-xs text-gray-400">v6.0.2 • Pasaya Curtain Center</div>
+           <div className="mt-8 text-xs text-gray-400">v6.0.3 • Pasaya Curtain Center</div>
       </div>
   );
 
@@ -740,9 +753,13 @@ export default function App() {
                       <div className="grid grid-cols-7 text-center text-xs gap-1">
                           {(() => {
                               const days = getDaysArray(period.start, period.end);
-                              if (days.length === 0) return null;
+                              if (days.length === 0) return <div className="col-span-7 text-center text-gray-400 py-10">ไม่พบข้อมูลวันที่ (กรุณาเลือก Period ใหม่)</div>;
+                              
+                              // Check if first day is valid
                               const [y, m, d] = days[0].split('-').map(Number);
                               const firstDate = new Date(y, m - 1, d);
+                              if (isNaN(firstDate.getTime())) return null;
+
                               const startOffset = firstDate.getDay(); 
                               return (
                                   <>
@@ -833,7 +850,7 @@ export default function App() {
 
                   {/* List Users */}
                   <div className="space-y-2 mb-8">
-                      {appUsers.map((u, idx) => (
+                      {appUsers.length > 0 ? appUsers.map((u, idx) => (
                           <div key={idx} className="flex justify-between items-center p-3 bg-white rounded-lg border hover:bg-gray-50 transition-colors">
                               <div>
                                   <div className="text-sm font-medium text-gray-800">{u.username} <span className="text-gray-400 font-normal">({u.name})</span></div>
@@ -850,7 +867,12 @@ export default function App() {
                                   </button>
                               )}
                           </div>
-                      ))}
+                      )) : (
+                          <div className="text-center p-8 text-gray-400 bg-gray-50 rounded-lg border border-dashed">
+                              <UserMinus size={32} className="mx-auto mb-2 opacity-50"/>
+                              <p>ยังไม่มีผู้ใช้งานอื่น</p>
+                          </div>
+                      )}
                   </div>
 
                   <div className="border-t pt-6">
