@@ -731,6 +731,140 @@ export default function App() {
                   {isAddingTeam ? (<div className="bg-white p-4 rounded-xl shadow border"><input placeholder="ชื่อทีม" className="border w-full p-2 mb-2 rounded" autoFocus value={newTeamName} onChange={e=>setNewTeamName(e.target.value)}/><div className="flex gap-2"><button onClick={handleAddTeam} className="bg-black text-white flex-1 py-2 rounded">สร้าง</button><button onClick={()=>setIsAddingTeam(false)} className="bg-gray-100 flex-1 py-2 rounded">ยกเลิก</button></div></div>) : <button onClick={()=>setIsAddingTeam(true)} className="bg-gray-50 border-2 border-dashed rounded-xl flex items-center justify-center p-8 text-gray-400 hover:bg-white hover:border-black hover:text-black transition-all"><Plus size={32}/></button>}
               </div>
           )}
+
+          {activeTab === 'calendar' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-white p-6 rounded-xl shadow border">
+                      <h3 className="font-bold mb-4 flex items-center gap-2"><Calendar className="text-red-500"/> วันหยุดบริษัท</h3>
+                      <div className="grid grid-cols-7 text-center text-xs gap-1 mb-2">{['อา','จ','อ','พ','พฤ','ศ','ส'].map(d => (<div key={d} className="font-bold text-gray-400 py-1">{d}</div>))}</div>
+                      <div className="grid grid-cols-7 text-center text-xs gap-1">
+                          {(() => {
+                              const days = getDaysArray(period.start, period.end);
+                              if (days.length === 0) return null;
+                              const [y, m, d] = days[0].split('-').map(Number);
+                              const firstDate = new Date(y, m - 1, d);
+                              const startOffset = firstDate.getDay(); 
+                              return (
+                                  <>
+                                    {Array(startOffset).fill(null).map((_,i)=><div key={`b${i}`} className="p-2 bg-gray-50/50 border border-transparent"></div>)}
+                                    {days.map(dStr => {
+                                        const dayNum = parseInt(dStr.split('-')[2], 10);
+                                        return <button key={dStr} onClick={()=>handleAddHoliday(dStr)} className={`p-2 rounded border flex flex-col items-center justify-center h-16 ${holidays.includes(dStr)?'bg-red-50 border-red-200 text-red-600 font-bold':'hover:bg-gray-50'}`}><span className="text-lg">{dayNum}</span></button>
+                                    })}
+                                  </>
+                              )
+                          })()}
+                      </div>
+                  </div>
+                  <div className="bg-white p-6 rounded-xl shadow border">
+                      <h3 className="font-bold mb-4 flex items-center gap-2"><Users className="text-orange-500"/> วันลาพนักงาน</h3>
+                      <div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr><th className="text-left sticky left-0 bg-white p-2 min-w-[100px]">ชื่อ</th>{getDaysArray(period.start, period.end).map(d=><th key={d} className="min-w-[30px] p-1 text-center bg-gray-50 border-b"><div className="text-[8px] text-gray-400">{parseInt(d.split('-')[2])}</div></th>)}</tr></thead>
+                      <tbody>
+                      {teams.flatMap(t => 
+                            (t.members||[]).map(m => ({ ...m, teamId: t.id }))
+                        ).map((m, flatIdx) => (
+                            <tr key={`${m.id}-${flatIdx}`} className="hover:bg-gray-50">
+                                <td className="py-2 sticky left-0 bg-white border-r font-medium pl-2">{m.name}</td>
+                                {getDaysArray(period.start, period.end).map(d => {
+                                    const l = leaves.find(x => x.techId === m.id && x.date === d);
+                                    const holiday = holidays.includes(d);
+                                    const leaveType = l ? LEAVE_TYPES.find(t => t.id === l.type) : null;
+                                    return (
+                                        <td 
+                                            key={d} 
+                                            onClick={(e) => !holiday && openLeaveMenu(e, m.id, d)} 
+                                            className={`border text-center cursor-pointer ${holiday ? 'bg-red-50' : ''} ${leaveType ? leaveType.color : ''}`}
+                                        >
+                                            {leaveType ? leaveType.short : ''}
+                                        </td>
+                                    );
+                                })}
+                            </tr>
+                        ))}
+                      </tbody></table></div>
+                  </div>
+              </div>
+          )}
+
+          {activeTab === 'admin' && (
+              <div className="bg-white p-6 rounded-xl shadow border max-w-2xl mx-auto">
+                  <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Shield className="text-blue-600"/> จัดการผู้ใช้งาน (Users)</h3>
+                  
+                  {/* Add New User Form */}
+                  <div className="flex flex-col gap-2 mb-6 bg-gray-50 p-4 rounded-lg border">
+                      <label className="text-xs font-bold text-gray-600">เพิ่มผู้ใช้งานใหม่</label>
+                      <div className="grid grid-cols-2 gap-2">
+                          <input 
+                            type="text" 
+                            placeholder="Username" 
+                            className="border rounded-lg px-4 py-2 text-sm" 
+                            value={newUser.username} 
+                            onChange={e => setNewUser({...newUser, username: e.target.value})} 
+                          />
+                          <input 
+                            type="text" 
+                            placeholder="Password" 
+                            className="border rounded-lg px-4 py-2 text-sm" 
+                            value={newUser.password} 
+                            onChange={e => setNewUser({...newUser, password: e.target.value})} 
+                          />
+                      </div>
+                      <div className="flex gap-2">
+                          <input 
+                            type="text" 
+                            placeholder="ชื่อเรียก (Display Name)" 
+                            className="flex-1 border rounded-lg px-4 py-2 text-sm" 
+                            value={newUser.name} 
+                            onChange={e => setNewUser({...newUser, name: e.target.value})} 
+                          />
+                          <select 
+                            className="border rounded-lg px-2 py-2 text-sm bg-white" 
+                            value={newUser.role} 
+                            onChange={e => setNewUser({...newUser, role: e.target.value})}
+                          >
+                              <option value="admin">Admin</option>
+                              <option value="super_admin">Super Admin</option>
+                          </select>
+                          <button onClick={handleAddAppUser} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2">
+                              <UserPlus size={16}/> เพิ่ม
+                          </button>
+                      </div>
+                  </div>
+
+                  {/* List Users */}
+                  <div className="space-y-2 mb-8">
+                      {appUsers.map((u, idx) => (
+                          <div key={idx} className="flex justify-between items-center p-3 bg-white rounded-lg border hover:bg-gray-50 transition-colors">
+                              <div>
+                                  <div className="text-sm font-medium text-gray-800">{u.username} <span className="text-gray-400 font-normal">({u.name})</span></div>
+                                  <div className="flex items-center gap-2 mt-1">
+                                      <span className={`text-[10px] px-2 py-0.5 rounded-full ${u.role === 'super_admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                                          {u.role === 'super_admin' ? 'Super Admin' : 'Admin'}
+                                      </span>
+                                      <span className="text-[10px] text-gray-400">Pass: {u.password}</span>
+                                  </div>
+                              </div>
+                              {u.username !== DEFAULT_SUPER_ADMIN.username && u.username !== currentUser.username && (
+                                  <button onClick={() => handleRemoveAppUser(u.id, u.username)} className="text-gray-300 hover:text-red-500 p-2 rounded hover:bg-red-50 transition-all">
+                                      <Trash2 size={16}/>
+                                  </button>
+                              )}
+                          </div>
+                      ))}
+                  </div>
+
+                  <div className="border-t pt-6">
+                      <h4 className="font-bold text-gray-700 mb-2 flex items-center gap-2"><Database size={16}/> จัดการฐานข้อมูล</h4>
+                      <div className="bg-orange-50 p-4 rounded-lg border border-orange-100 flex items-center justify-between">
+                          <div>
+                              <p className="text-sm font-bold text-orange-800">กู้คืนข้อมูลเริ่มต้น (Reset Data)</p>
+                              <p className="text-xs text-orange-600 mt-1">ใช้เมื่อข้อมูลทีมช่างหาย หรือต้องการเริ่มระบบใหม่</p>
+                          </div>
+                          <button onClick={handleSeedData} className="bg-orange-600 text-white px-4 py-2 rounded text-xs hover:bg-orange-700 transition-colors">กู้คืนข้อมูล</button>
+                      </div>
+                  </div>
+              </div>
+          )}
         </ErrorBoundary>
       </div>
 
