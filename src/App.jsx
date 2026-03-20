@@ -132,7 +132,7 @@ export default function App() {
   const [jobs, setJobs] = useState([]);
   const [savedPeriods, setSavedPeriods] = useState([]);
   const [appUsers, setAppUsers] = useState([]); 
-  const [themeColor, setThemeColor] = useState('#000000'); 
+  const [themeColor, setThemeColor] = useState('#424242'); // Updated Default Theme
 
   const [period, setPeriod] = useState(() => {
       try { const saved = localStorage.getItem(`pasaya_period_${appId}`); return saved ? JSON.parse(saved) : getCurrentMonthPeriod(); } catch (e) { return getCurrentMonthPeriod(); }
@@ -711,14 +711,14 @@ export default function App() {
       </div>
   );
 
-  const printStyles = `@media print { @page { size: A4; margin: 1cm; } body, html, #root { background: white !important; height: auto !important; overflow: visible !important; } .no-print { display: none !important; } .print-only { display: block !important; position: relative; top: 0; left: 0; width: 100%; } table { width: 100% !important; border-collapse: collapse !important; } th, td { border: 1px solid #ddd !important; padding: 4px !important; } } .print-only { display: none; }`;
+  const printStyles = `@media print { @page { size: A4; margin: 1cm; } body, html, #root { background: white !important; height: auto !important; overflow: visible !important; } .no-print { display: none !important; } .print-only { display: block !important; position: relative; top: 0; left: 0; width: 100%; } table { width: 100% !important; border-collapse: collapse !important; } th, td { border: 1px solid black !important; padding: 6px !important; } .print-visible { display: block !important; } .print-only-table table { border: 1px solid black; } } .print-only { display: none; }`;
 
   return (
     <div className="min-h-screen bg-white text-sm font-sans text-gray-800 pb-20 relative">
       <style>{printStyles}</style>
-      {notification && <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-white flex items-center gap-2 animate-bounce-in ${notification.type === 'error' ? 'bg-red-500' : 'bg-green-600'}`}>{notification.type === 'error' ? <AlertCircle size={20}/> : <CheckCircle size={20}/>}<span>{notification.message}</span></div>}
+      {notification && <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-white flex items-center gap-2 animate-bounce-in ${notification.type === 'error' ? 'bg-red-500' : 'bg-green-600'} no-print`}>{notification.type === 'error' ? <AlertCircle size={20}/> : <CheckCircle size={20}/>}<span>{notification.message}</span></div>}
       {permissionError && (
-          <div className="fixed bottom-4 left-4 z-[2000] max-w-md bg-red-50 border border-red-200 shadow-2xl rounded-xl p-4 flex flex-col gap-3">
+          <div className="fixed bottom-4 left-4 z-[2000] max-w-md bg-red-50 border border-red-200 shadow-2xl rounded-xl p-4 flex flex-col gap-3 no-print">
                <div><h3 className="font-bold text-red-700 flex items-center gap-2"><AlertTriangle size={16}/> เชื่อมต่อ Database ไม่ได้</h3><p className="text-xs text-red-600 mt-1">กรุณาตรวจสอบว่าตั้งค่า Firebase กฎ Rules ครบถ้วนและเปิด Anonymous Authentication แล้ว</p></div>
                <button onClick={() => setPermissionError(false)} className="bg-gray-200 text-gray-700 px-3 py-1.5 rounded text-xs w-full">ปิดแจ้งเตือนนี้</button>
           </div>
@@ -735,7 +735,7 @@ export default function App() {
              <div className="flex gap-2"><button onClick={() => window.print()} style={{backgroundColor: themeColor}} className="px-3 py-2 rounded-md flex items-center gap-2 text-white hover:opacity-90 text-xs"><Printer size={14} /> Print</button><button onClick={handleLogout} className="px-3 py-2 rounded-md flex items-center gap-2 border hover:bg-gray-50 text-red-600 text-xs"><LogOut size={14} /> Out</button></div>
           </div>
           <div className="flex flex-wrap items-end gap-4 justify-between pt-2">
-            <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-lg border"><span className="text-[10px] uppercase font-bold text-gray-500 px-2">Period</span><div className="font-bold text-sm px-2 border-r border-gray-300" style={{color: themeColor}}>{period.name}</div><input type="date" value={period.start} onChange={e => setPeriod({...period, start: e.target.value, name: 'กำหนดเอง'})} className="bg-transparent border-none text-xs w-24"/><span className="text-gray-400">-</span><input type="date" value={period.end} onChange={e => setPeriod({...period, end: e.target.value, name: 'กำหนดเอง'})} className="bg-transparent border-none text-xs w-24"/><button onClick={() => setShowPeriodManager(!showPeriodManager)} className="p-1 hover:bg-white rounded"><FolderPlus size={14}/></button>{showPeriodManager && <div className="absolute top-full left-0 mt-2 w-72 bg-white border shadow-xl rounded-xl z-50 p-4"><h4 className="font-bold mb-2 text-gray-700">Saved Periods</h4><ul className="max-h-40 overflow-y-auto mb-3 space-y-1 text-xs">{savedPeriods.map((p, pIdx) => (<li key={`${p.id}-${pIdx}`} className="flex justify-between p-2 hover:bg-gray-50 cursor-pointer rounded">{editingPeriod?.id === p.id ? (<div className="flex gap-1 flex-1" onClick={e=>e.stopPropagation()}><input className="border rounded p-1 w-20" value={editingPeriod.name} onChange={e=>setEditingPeriod({...editingPeriod, name:e.target.value})}/><input type="date" className="border rounded p-1" value={editingPeriod.start} onChange={e=>setEditingPeriod({...editingPeriod, start:e.target.value})}/><input type="date" className="border rounded p-1" value={editingPeriod.end} onChange={e=>setEditingPeriod({...editingPeriod, end:e.target.value})}/><button onClick={handleUpdatePeriod} className="bg-green-500 text-white px-1 rounded">✓</button><button onClick={()=>setEditingPeriod(null)} className="bg-gray-300 px-1 rounded">x</button></div>) : (<><span onClick={() => {setPeriod(p); setShowPeriodManager(false);}} className="flex-1">{p.name}</span> <div className="flex gap-1"><button onClick={(e)=>{e.stopPropagation(); setEditingPeriod(p);}} className="text-gray-400 hover:text-blue-500"><Pencil size={12}/></button><button onClick={(e)=>{e.stopPropagation(); handleDeletePeriod(p.id)}} className="text-gray-400 hover:text-red-500"><X size={12}/></button></div></>)}</li>))}</ul><div className="flex gap-1"><input className="border rounded px-2 py-1 text-xs flex-1" placeholder="ชื่อรอบ" value={newPeriodName} onChange={e=>setNewPeriodName(e.target.value)}/><button onClick={handleSavePeriod} style={{backgroundColor: themeColor}} className="text-white px-2 rounded text-xs hover:opacity-90">Save</button></div></div>}</div>
+            <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-lg border"><span className="text-[10px] uppercase font-bold text-gray-500 px-2">Period</span><div className="font-bold text-sm px-2 border-r border-gray-300" style={{color: themeColor}}>{period.name}</div><input type="date" value={period.start} onChange={e => setPeriod({...period, start: e.target.value, name: 'กำหนดเอง'})} className="bg-transparent border-none text-xs w-24"/><span className="text-gray-400">-</span><input type="date" value={period.end} onChange={e => setPeriod({...period, end: e.target.value, name: 'กำหนดเอง'})} className="bg-transparent border-none text-xs w-24"/><button onClick={() => setShowPeriodManager(!showPeriodManager)} className="p-1 hover:bg-white rounded"><FolderPlus size={14}/></button>{showPeriodManager && <div className="absolute top-full left-0 mt-2 w-72 bg-white border shadow-xl rounded-xl z-50 p-4"><h4 className="font-bold mb-2 text-gray-700">Saved Periods</h4><ul className="max-h-40 overflow-y-auto mb-3 space-y-1 text-xs">{savedPeriods.map((p, pIdx) => (<li key={`${p.id}-${pIdx}`} className="flex justify-between p-2 hover:bg-gray-50 cursor-pointer rounded">{editingPeriod?.id === p.id ? (<div className="flex gap-1 flex-1" onClick={e=>e.stopPropagation()}><input className="border rounded p-1 w-20" value={editingPeriod.name} onChange={e=>setEditingPeriod({...editingPeriod, name:e.target.value})}/><input type="date" className="border rounded p-1" value={editingPeriod.start} onChange={e=>setEditingPeriod({...editingPeriod, start:e.target.value})}/><input type="date" className="border rounded p-1" value={editingPeriod.end} onChange={e=>setEditingPeriod({...editingPeriod, end:e.target.value})}/><button onClick={handleUpdatePeriod} className="bg-green-500 text-white px-1 rounded">✓</button><button onClick={()=>setEditingPeriod(null)} className="bg-gray-300 px-1 rounded">x</button></div>) : (<><span onClick={() => {setPeriod(p); setShowPeriodManager(false);}} className="flex-1">{p.name}</span> <div className="flex gap-1"><button onClick={(e)=>{e.stopPropagation(); setEditingPeriod(p);}} className="text-gray-400 hover:text-blue-500"><Pencil size={12}/></button><button onClick={(e)=>{e.preventDefault(); e.stopPropagation(); handleDeletePeriod(p.id)}} className="text-gray-400 hover:text-red-500"><X size={12}/></button></div></>)}</li>))}</ul><div className="flex gap-1"><input className="border rounded px-2 py-1 text-xs flex-1" placeholder="ชื่อรอบ" value={newPeriodName} onChange={e=>setNewPeriodName(e.target.value)}/><button onClick={handleSavePeriod} style={{backgroundColor: themeColor}} className="text-white px-2 rounded text-xs hover:opacity-90">Save</button></div></div>}</div>
             <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
                 {TABS.map(t => (
                     <button key={t.id} onClick={() => setActiveTab(t.id)} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1 ${activeTab === t.id ? 'shadow text-white' : 'text-gray-500 hover:text-gray-700'}`} style={activeTab === t.id ? {backgroundColor: themeColor} : {}}>
@@ -747,8 +747,8 @@ export default function App() {
         </div>
       </div>
 
-      {/* Main Content Area */}
-      <div className="max-w-7xl mx-auto px-4 py-6 no-print">
+      {/* Main Content Area - ปรับซ่อนเมื่อสั่งพิมพ์เฉพาะเมื่อไม่ได้อยู่แท็บ Reports */}
+      <div className={`max-w-7xl mx-auto px-4 py-6 ${activeTab !== 'reports' ? 'no-print' : ''}`}>
         <ErrorBoundary>
           {/* Dashboard Tab */}
           {activeTab === 'dashboard' && (
@@ -896,7 +896,7 @@ export default function App() {
           {/* New Reports Tab */}
           {activeTab === 'reports' && (
               <div className="bg-white rounded-xl shadow border overflow-hidden">
-                  <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+                  <div className="p-4 border-b flex justify-between items-center bg-gray-50 no-print">
                       <div className="flex gap-4">
                           <button onClick={() => setReportType('team')} className={`px-4 py-2 text-sm font-bold border-b-2 transition-all ${reportType === 'team' ? 'border-black text-black' : 'border-transparent text-gray-400'}`} style={reportType === 'team' ? {borderColor: themeColor, color: themeColor} : {}}>รายงานแยกตามทีม</button>
                           <button onClick={() => setReportType('tech')} className={`px-4 py-2 text-sm font-bold border-b-2 transition-all ${reportType === 'tech' ? 'border-black text-black' : 'border-transparent text-gray-400'}`} style={reportType === 'tech' ? {borderColor: themeColor, color: themeColor} : {}}>รายงานแยกตามบุคคล</button>
@@ -907,7 +907,7 @@ export default function App() {
                   <div className="p-4">
                       {reportType === 'team' && (
                           <div>
-                              <div className="mb-4 flex items-center gap-2">
+                              <div className="mb-4 flex items-center gap-2 no-print">
                                   <label className="font-bold text-gray-700">เลือกทีม:</label>
                                   <select className="border rounded p-2 text-sm" value={selectedReportTeamId} onChange={e=>setSelectedReportTeamId(e.target.value)}>
                                       <option value="">-- กรุณาเลือกทีม --</option>
@@ -964,7 +964,7 @@ export default function App() {
 
                       {reportType === 'tech' && (
                           <div>
-                              <div className="mb-4 flex items-center gap-2">
+                              <div className="mb-4 flex items-center gap-2 no-print">
                                   <label className="font-bold text-gray-700">เลือกพนักงาน:</label>
                                   <select className="border rounded p-2 text-sm" value={selectedReportTechId} onChange={e=>setSelectedReportTechId(e.target.value)}>
                                       <option value="">-- กรุณาเลือกพนักงาน --</option>
@@ -1036,8 +1036,9 @@ export default function App() {
                       <h4 className="font-bold text-gray-700 mb-2 flex items-center gap-2"><Palette size={16}/> เปลี่ยนสีธีมหลัก</h4>
                       <div className="flex items-center gap-4 bg-gray-50 p-4 rounded-lg">
                           <input type="color" value={themeColor} onChange={e=>setThemeColor(e.target.value)} className="w-12 h-12 rounded cursor-pointer"/>
+                          <input type="text" value={themeColor} onChange={e=>setThemeColor(e.target.value)} className="border rounded p-2 w-28 text-sm font-mono text-center uppercase" maxLength={7} placeholder="#424242" />
                           <div className="flex-1">
-                              <p className="text-xs text-gray-500">สีที่เลือกจะเปลี่ยนสีปุ่มและแถบเมนูทั้งหมดสำหรับผู้ใช้งานทุกคน</p>
+                              <p className="text-xs text-gray-500">สีที่เลือกจะเปลี่ยนสีปุ่มและแถบเมนูทั้งหมดสำหรับผู้ใช้งานทุกคน (พิมพ์ระบุรหัส HEX ได้เลย)</p>
                               <button onClick={() => handleSaveTheme(themeColor)} className="mt-2 text-white px-4 py-1.5 rounded text-xs font-bold" style={{backgroundColor: themeColor}}>บันทึกสี</button>
                           </div>
                       </div>
@@ -1092,15 +1093,6 @@ export default function App() {
           )}
         </ErrorBoundary>
       </div>
-      
-      {/* Hidden print styles logic applied directly via CSS above */}
-      <style>{`
-          @media print {
-              .print-visible { display: block !important; }
-              .print-only-table table { width: 100% !important; border: 1px solid black; }
-              .print-only-table th, .print-only-table td { border: 1px solid black; padding: 6px; }
-          }
-      `}</style>
       
       {/* Print Overlay for Old Summary Report */}
       <div className="print-only p-8">
