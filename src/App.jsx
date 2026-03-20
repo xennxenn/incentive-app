@@ -3,7 +3,7 @@ import {
   Calendar, Users, DollarSign, FileText, Plus, Trash2, Edit2, 
   ChevronDown, CheckSquare, Square, Printer, Save, RefreshCw, X, FolderPlus,
   AlertCircle, CheckCircle, Cloud, Loader2, ArrowUp, ArrowDown, Lock, LogOut, UserPlus, Shield,
-  BarChart3, PieChart, UserCog, CalendarDays, Database, FileSpreadsheet, AlertTriangle, Clock, UserMinus, Pencil, Ruler, MapPin, Key, Palette
+  BarChart3, PieChart, UserCog, CalendarDays, Database, FileSpreadsheet, AlertTriangle, Clock, UserMinus, Pencil, Ruler, MapPin, Key, Palette, Search
 } from 'lucide-react';
 
 // --- Firebase Imports ---
