@@ -62,6 +62,9 @@ try {
 // 2. Static APP ID (ระบุชื่อตรงๆ เพื่อป้องกันปัญหาเครื่องหมาย / ที่ทำให้ Firestore Error)
 const appId = 'pasaya-incentive-v6-production';
 
+// โลโก้หลักของแอป (อัปเดตลิงก์ตรงสำหรับ Google Drive เพื่อแก้ปัญหาโหลดรูปไม่ขึ้น)
+const LOGO_URL = 'https://lh3.googleusercontent.com/d/1xT2ysUSWkTcFxs1ztoGxZuQcnO_c66Tu';
+
 // --- Error Boundary ---
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false }; }
@@ -241,8 +244,7 @@ export default function App() {
       }
       link.href = url;
     };
-    const logoUrl = 'https://drive.google.com/uc?export=view&id=1xT2ysUSWkTcFxs1ztoGxZuQcnO_c66Tu';
-    setFavicon(logoUrl);
+    setFavicon(LOGO_URL);
   }, []);
 
   // --- Auth & Init Effects ---
@@ -270,7 +272,6 @@ export default function App() {
   useEffect(() => {
     if (!dbReady || !db) return;
     try {
-        // แก้ไข Ghost ID Bug: ต้องวาง id: d.id ไว้หลังสุดเพื่อป้องกันข้อมูลขยะทับ ID จริง
         const unsubUsers = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'app_users'), (snap) => setAppUsers(snap.docs.map(d => ({ ...d.data(), id: d.id }))), handlePermissionError);
         const unsubSettings = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'theme'), (docSnap) => { if(docSnap.exists() && docSnap.data().color) setThemeColor(docSnap.data().color); }, handlePermissionError);
         return () => { unsubUsers(); unsubSettings(); };
@@ -282,7 +283,6 @@ export default function App() {
   useEffect(() => {
     if (!dbReady || !currentUser || !db) { setLoading(false); return; }
     try {
-        // แก้ไข Ghost ID Bug: ต้องวาง id: d.id ไว้หลังสุดเสมอ
         const unsubTeams = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), async (snap) => {
               const list = snap.docs.map(d => ({ ...d.data(), id: d.id })); setTeams(list);
               if (list.length === 0 && !snap.metadata.fromCache) {
@@ -461,7 +461,6 @@ export default function App() {
   const handleSavePeriod = async () => { 
       if(newPeriodName) { 
           try { 
-              // แก้ไข Ghost ID Bug: ป้องกันการเซฟ ID เก่าเข้าไปใน Document ใหม่
               const { id, ...cleanPeriodData } = period;
               await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'savedPeriods'), { ...cleanPeriodData, name: newPeriodName }); 
               setNewPeriodName(''); 
@@ -472,7 +471,7 @@ export default function App() {
   };
   
   const handleDeletePeriod = (id) => {
-      setShowPeriodManager(false); // ซ่อนเมนูให้เรียบร้อยก่อนเพื่อไม่ให้บัง Popup ยืนยัน
+      setShowPeriodManager(false); 
       requestConfirm('ลบรอบบันทึก', 'ยืนยันการลบช่วงเวลานี้?', async () => { 
           try { 
               await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'savedPeriods', id)); 
@@ -714,7 +713,9 @@ export default function App() {
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-4">
            {notification && <div className="fixed top-4 bg-red-500 text-white px-4 py-2 rounded shadow">{notification.message}</div>}
            <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md text-center">
-               <div className="mb-6 flex justify-center"><div className="w-32 h-32 border-4 border-black flex items-center justify-center p-2 bg-white"><div className="text-center"><h1 className="text-2xl font-serif font-bold tracking-widest leading-none">PASAYA</h1><p className="text-[8px] tracking-[0.2em] font-sans font-bold mt-1">CURTAIN CENTER</p></div></div></div>
+               <div className="mb-6 flex justify-center">
+                   <img src={LOGO_URL} alt="PASAYA Logo" className="h-24 w-auto object-contain" />
+               </div>
                <h2 className="text-xl font-bold text-gray-800 mb-6">Incentive Calculator</h2>
                <form onSubmit={handleLogin} className="space-y-4 text-left">
                    <div><label className="text-xs font-bold text-gray-600 block mb-1">Username</label><div className="relative"><input type="text" required className="w-full border rounded-lg px-4 py-2 pl-10" value={usernameInput} onChange={e => setUsernameInput(e.target.value)}/><Users className="absolute left-3 top-2.5 text-gray-400" size={16}/></div></div>
@@ -751,7 +752,11 @@ export default function App() {
       <div className="bg-white border-b sticky top-0 z-50 no-print">
         <div className="max-w-7xl mx-auto px-4 py-3">
           <div className="flex justify-between items-center mb-4">
-             <div className="flex items-center gap-4"><div style={{borderColor: themeColor}} className="border-2 p-1 w-12 h-12 flex items-center justify-center"><div className="text-center" style={{color: themeColor}}><h1 className="text-[10px] font-serif font-bold tracking-widest leading-none">PASAYA</h1><p className="text-[4px] tracking-[0.1em] font-sans font-bold">CURTAIN</p></div></div><div className="h-8 w-px bg-gray-300"></div><div><h2 className="font-bold text-gray-700">Incentive Calculator</h2><div className="flex items-center gap-2 text-xs text-gray-500"><Users size={10}/> User: {currentUser.name} ({currentUser.role})</div></div></div>
+             <div className="flex items-center gap-4">
+                 <img src={LOGO_URL} alt="PASAYA Logo" className="h-10 w-auto object-contain" />
+                 <div className="h-8 w-px bg-gray-300"></div>
+                 <div><h2 className="font-bold text-gray-700">Incentive Calculator</h2><div className="flex items-center gap-2 text-xs text-gray-500"><Users size={10}/> User: {currentUser.name} ({currentUser.role})</div></div>
+             </div>
              <div className="flex gap-2"><button onClick={() => window.print()} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-3 py-2 rounded-md flex items-center gap-2 hover:opacity-90 text-xs"><Printer size={14} /> Print</button><button onClick={handleLogout} className="px-3 py-2 rounded-md flex items-center gap-2 border hover:bg-gray-50 text-red-600 text-xs"><LogOut size={14} /> Out</button></div>
           </div>
           <div className="flex flex-wrap items-end gap-4 justify-between pt-2">
@@ -937,7 +942,10 @@ export default function App() {
                               
                               {selectedReportTeamId && calculatedData.reportTeamLogs[selectedReportTeamId] && (
                                   <div className="overflow-x-auto print-only-table">
-                                      <h3 className="font-bold text-lg mb-2 text-center hidden print-visible">{calculatedData.reportTeamLogs[selectedReportTeamId].name} <br/><span className="text-sm font-normal">ประจำรอบ {period.name} ({formatDate(period.start)} - {formatDate(period.end)})</span></h3>
+                                      <div className="hidden print-visible text-center mb-4">
+                                          <img src={LOGO_URL} alt="PASAYA Logo" className="h-16 w-auto mx-auto mb-2 object-contain" />
+                                          <h3 className="font-bold text-lg">{calculatedData.reportTeamLogs[selectedReportTeamId].name} <br/><span className="text-sm font-normal">ประจำรอบ {period.name} ({formatDate(period.start)} - {formatDate(period.end)})</span></h3>
+                                      </div>
                                       <table className="w-full text-left text-xs border-collapse">
                                           <thead className="bg-gray-100">
                                               <tr><th className="border p-2">วันที่</th><th className="border p-2">เวลา</th><th className="border p-2">งาน</th><th className="border p-2">ลูกค้า</th><th className="border p-2">สถานที่</th><th className="border p-2 text-center">ราง (แบ่ง)</th><th className="border p-2 text-center">จำนวนช่าง (ในทีม)</th><th className="border p-2 text-center">หมายเหตุ</th><th className="border p-2 text-right">Incentive</th></tr>
@@ -996,7 +1004,10 @@ export default function App() {
 
                               {selectedReportTechId && calculatedData.reportTechLogs[selectedReportTechId] && (
                                   <div className="overflow-x-auto print-only-table">
-                                      <h3 className="font-bold text-lg mb-2 text-center hidden print-visible">{calculatedData.reportTechLogs[selectedReportTechId].name} <span className="text-sm font-normal text-gray-500">({calculatedData.reportTechLogs[selectedReportTechId].teamName})</span> <br/><span className="text-sm font-normal">ประจำรอบ {period.name} ({formatDate(period.start)} - {formatDate(period.end)})</span></h3>
+                                      <div className="hidden print-visible text-center mb-4">
+                                          <img src={LOGO_URL} alt="PASAYA Logo" className="h-16 w-auto mx-auto mb-2 object-contain" />
+                                          <h3 className="font-bold text-lg">{calculatedData.reportTechLogs[selectedReportTechId].name} <span className="text-sm font-normal text-gray-500">({calculatedData.reportTechLogs[selectedReportTechId].teamName})</span> <br/><span className="text-sm font-normal">ประจำรอบ {period.name} ({formatDate(period.start)} - {formatDate(period.end)})</span></h3>
+                                      </div>
                                       <table className="w-full text-left text-xs border-collapse">
                                           <thead className="bg-gray-100">
                                               <tr><th className="border p-2">วันที่</th><th className="border p-2">เวลา</th><th className="border p-2">งาน</th><th className="border p-2">ลูกค้า</th><th className="border p-2">สถานที่</th><th className="border p-2 text-center">ราง (หาร)</th><th className="border p-2 text-center">จำนวนช่าง (ในทีม)</th><th className="border p-2 text-center">หมายเหตุ</th><th className="border p-2 text-right">Incentive</th></tr>
@@ -1118,7 +1129,11 @@ export default function App() {
       <div className="print-only p-8">
           {activeTab !== 'reports' && (
               <>
-                  <div className="text-center mb-6"><h1 className="text-3xl font-serif font-bold tracking-widest">PASAYA</h1><p className="text-xs tracking-[0.2em] font-sans font-bold mb-4">CURTAIN CENTER</p><h2 className="text-xl">สรุปรายงาน Incentive</h2><p className="text-sm text-gray-500">{period.name} ({formatDate(period.start)} - {formatDate(period.end)})</p></div>
+                  <div className="text-center mb-6">
+                      <img src={LOGO_URL} alt="PASAYA Logo" className="h-16 w-auto mx-auto mb-2 object-contain" />
+                      <h2 className="text-xl font-bold mt-2">สรุปรายงาน Incentive</h2>
+                      <p className="text-sm text-gray-500">{period.name} ({formatDate(period.start)} - {formatDate(period.end)})</p>
+                  </div>
                   <div className="grid grid-cols-1 gap-8">
                      {calculatedData.teamStats.map(t => (
                          <div key={t.id} className="break-inside-avoid">
