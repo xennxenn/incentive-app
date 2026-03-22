@@ -49,7 +49,6 @@ const manualConfig = {
 };
 
 try {
-  // ไม่ใช้ __firebase_config เพื่อป้องกันการหลุดไปใช้ DB ของ Canvas ซึ่งมี Rules ที่เข้มงวดเกินไป
   app = initializeApp(manualConfig);
   auth = getAuth(app);
   db = getFirestore(app);
@@ -119,6 +118,18 @@ const getCurrentMonthPeriod = () => {
     return { name: 'เดือนปัจจุบัน', start: fmt(start), end: fmt(end) };
 };
 
+// Auto-Contrast Helper
+const getContrastYIQ = (hexcolor) => {
+    if (!hexcolor) return 'white';
+    hexcolor = hexcolor.replace("#", "");
+    if (hexcolor.length === 3) hexcolor = hexcolor.split('').map(c => c + c).join('');
+    const r = parseInt(hexcolor.substr(0,2),16);
+    const g = parseInt(hexcolor.substr(2,2),16);
+    const b = parseInt(hexcolor.substr(4,2),16);
+    const yiq = ((r*299)+(g*587)+(b*114))/1000;
+    return (yiq >= 128) ? 'black' : 'white';
+};
+
 export default function App() {
   // --- State ---
   const [dbReady, setDbReady] = useState(false);
@@ -132,7 +143,7 @@ export default function App() {
   const [jobs, setJobs] = useState([]);
   const [savedPeriods, setSavedPeriods] = useState([]);
   const [appUsers, setAppUsers] = useState([]); 
-  const [themeColor, setThemeColor] = useState('#424242'); // Updated Default Theme
+  const [themeColor, setThemeColor] = useState('#424242');
 
   const [period, setPeriod] = useState(() => {
       try { const saved = localStorage.getItem(`pasaya_period_${appId}`); return saved ? JSON.parse(saved) : getCurrentMonthPeriod(); } catch (e) { return getCurrentMonthPeriod(); }
@@ -169,6 +180,8 @@ export default function App() {
   const [editingPeriod, setEditingPeriod] = useState(null); 
   
   const leaveMenuRef = useRef(null);
+
+  const themeTextColor = useMemo(() => getContrastYIQ(themeColor), [themeColor]);
 
   // --- Handlers ---
   const showNotification = (message, type = 'success') => { setNotification({ message, type }); setTimeout(() => setNotification(null), 4000); };
@@ -237,7 +250,6 @@ export default function App() {
     if (!auth) return;
     const initAuth = async () => { 
         try {
-            // บังคับล็อกอินแบบ Anonymous ตรงเข้า Database ของ User เลย
             await signInAnonymously(auth); 
         } catch (err) { 
             console.error("Auth Error", err);
@@ -248,7 +260,7 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, (u) => { 
         if (u) {
             setDbReady(true); 
-            setPermissionError(false); // Reset error state on connection
+            setPermissionError(false); 
         }
     });
     return () => unsubscribe();
@@ -258,7 +270,8 @@ export default function App() {
   useEffect(() => {
     if (!dbReady || !db) return;
     try {
-        const unsubUsers = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'app_users'), (snap) => setAppUsers(snap.docs.map(d => ({ id: d.id, ...d.data() }))), handlePermissionError);
+        // แก้ไข Ghost ID Bug: ต้องวาง id: d.id ไว้หลังสุดเพื่อป้องกันข้อมูลขยะทับ ID จริง
+        const unsubUsers = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'app_users'), (snap) => setAppUsers(snap.docs.map(d => ({ ...d.data(), id: d.id }))), handlePermissionError);
         const unsubSettings = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'theme'), (docSnap) => { if(docSnap.exists() && docSnap.data().color) setThemeColor(docSnap.data().color); }, handlePermissionError);
         return () => { unsubUsers(); unsubSettings(); };
     } catch (e) {
@@ -269,8 +282,9 @@ export default function App() {
   useEffect(() => {
     if (!dbReady || !currentUser || !db) { setLoading(false); return; }
     try {
+        // แก้ไข Ghost ID Bug: ต้องวาง id: d.id ไว้หลังสุดเสมอ
         const unsubTeams = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), async (snap) => {
-              const list = snap.docs.map(d => ({ id: d.id, ...d.data() })); setTeams(list);
+              const list = snap.docs.map(d => ({ ...d.data(), id: d.id })); setTeams(list);
               if (list.length === 0 && !snap.metadata.fromCache) {
                  try {
                      const check = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'teams'));
@@ -281,10 +295,10 @@ export default function App() {
               }
         }, handlePermissionError);
 
-        const unsubJobs = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'jobs'), (s) => setJobs(s.docs.map(d => ({ id: d.id, ...d.data() }))), handlePermissionError);
-        const unsubLeaves = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'leaves'), (s) => setLeaves(s.docs.map(d => ({ id: d.id, ...d.data() }))), handlePermissionError);
+        const unsubJobs = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'jobs'), (s) => setJobs(s.docs.map(d => ({ ...d.data(), id: d.id }))), handlePermissionError);
+        const unsubLeaves = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'leaves'), (s) => setLeaves(s.docs.map(d => ({ ...d.data(), id: d.id }))), handlePermissionError);
         const unsubHols = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'holidays'), (s) => setHolidays(s.docs.map(d => d.data().date)), handlePermissionError);
-        const unsubPeriods = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'savedPeriods'), (s) => { setSavedPeriods(s.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false); }, handlePermissionError);
+        const unsubPeriods = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'savedPeriods'), (s) => { setSavedPeriods(s.docs.map(d => ({ ...d.data(), id: d.id }))); setLoading(false); }, handlePermissionError);
         
         return () => { unsubTeams(); unsubJobs(); unsubLeaves(); unsubHols(); unsubPeriods(); };
     } catch (e) {
@@ -443,10 +457,22 @@ export default function App() {
       catch(e) { handlePermissionError(e); showNotification(`Move failed: ${e.message}`, 'error'); }
   };
   const toggleTech = async (jid, tid) => { const j = jobs.find(x => x.id === jid); const sel = j.selectedTechs || []; try { await updateJob(jid, 'selectedTechs', sel.includes(tid) ? sel.filter(x => x!==tid) : [...sel, tid]); } catch(e) { handlePermissionError(e); showNotification(`Toggle failed: ${e.message}`, 'error'); } };
-  const handleSavePeriod = async () => { if(newPeriodName) { try { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'savedPeriods'), { ...period, name: newPeriodName }); setNewPeriodName(''); setShowPeriodManager(false); showNotification('บันทึกรอบสำเร็จ'); } catch(e) { handlePermissionError(e); showNotification(`Save failed: ${e.message}`, 'error'); } } };
+  
+  const handleSavePeriod = async () => { 
+      if(newPeriodName) { 
+          try { 
+              // แก้ไข Ghost ID Bug: ป้องกันการเซฟ ID เก่าเข้าไปใน Document ใหม่
+              const { id, ...cleanPeriodData } = period;
+              await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'savedPeriods'), { ...cleanPeriodData, name: newPeriodName }); 
+              setNewPeriodName(''); 
+              setShowPeriodManager(false); 
+              showNotification('บันทึกรอบสำเร็จ'); 
+          } catch(e) { handlePermissionError(e); showNotification(`Save failed: ${e.message}`, 'error'); } 
+      } 
+  };
   
   const handleDeletePeriod = (id) => {
-      setShowPeriodManager(false); // ซ่อนเมนู dropdown ก่อนแสดงหน้าจอยืนยัน
+      setShowPeriodManager(false); // ซ่อนเมนูให้เรียบร้อยก่อนเพื่อไม่ให้บัง Popup ยืนยัน
       requestConfirm('ลบรอบบันทึก', 'ยืนยันการลบช่วงเวลานี้?', async () => { 
           try { 
               await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'savedPeriods', id)); 
@@ -538,14 +564,12 @@ export default function App() {
                 const dayStats = dailyTeamIncentive[day]?.[team.id];
                 const isHol = holidays.includes(day);
 
-                // Add Holiday Logs
                 if (isHol) {
                     reportTeamLogs[team.id].rows.push({ isHoliday: true, date: day, time: '-', type: '-', customer: 'วันหยุดบริษัท', location: '-', rails: '-', techs: '-', note: '-', inc: '-' });
                     membersList.forEach(m => {
                         reportTechLogs[m.id].rows.push({ isHoliday: true, date: day, time: '-', type: '-', customer: 'วันหยุดบริษัท', location: '-', rails: '-', techs: '-', note: '-', inc: '-' });
                     });
                 } else {
-                    // Add Leave Logs
                     membersList.forEach(m => {
                         const leave = leaves.find(l => l.techId === m.id && l.date === day);
                         if (leave) {
@@ -556,7 +580,6 @@ export default function App() {
                     });
                 }
 
-                // Process Job Logs for this day (Ascending order for report)
                 const dayJobs = periodJobs.filter(j => j.date === day).sort((a,b) => (a.timeSlot||'').localeCompare(b.timeSlot||''));
                 
                 dayJobs.forEach(job => {
@@ -577,7 +600,6 @@ export default function App() {
                     const excludedTypes = ['measure', 'travel_go', 'travel_back', 'fix_free'];
                     const isExcluded = excludedTypes.includes(job.type);
                     
-                    // If this team is involved in this job
                     if (involvedTeams[team.id]) {
                         const teamTechs = involvedTeams[team.id];
                         const teamTechCount = teamTechs.length;
@@ -590,7 +612,6 @@ export default function App() {
                         const typeLabel = JOB_TYPES.find(t=>t.id===job.type)?.label || job.type;
                         const noteStr = isShared ? 'งานควบ' : '';
 
-                        // Push Team Row
                         reportTeamLogs[team.id].rows.push({
                             date: job.date,
                             time: job.timeSlot || '-',
@@ -603,7 +624,6 @@ export default function App() {
                             inc: teamShareAmt
                         });
 
-                        // Calculate eligible for individuals
                         const activeMembers = membersList.filter(m => m.joinDate <= day && (!m.resignDate || m.resignDate > day));
                         const eligibleMembers = activeMembers.filter(m => {
                             const leave = leaves.find(l => l.techId === m.id && l.date === day);
@@ -699,7 +719,7 @@ export default function App() {
                <form onSubmit={handleLogin} className="space-y-4 text-left">
                    <div><label className="text-xs font-bold text-gray-600 block mb-1">Username</label><div className="relative"><input type="text" required className="w-full border rounded-lg px-4 py-2 pl-10" value={usernameInput} onChange={e => setUsernameInput(e.target.value)}/><Users className="absolute left-3 top-2.5 text-gray-400" size={16}/></div></div>
                    <div><label className="text-xs font-bold text-gray-600 block mb-1">Password</label><div className="relative"><input type="password" required className="w-full border rounded-lg px-4 py-2 pl-10" value={passwordInput} onChange={e => setPasswordInput(e.target.value)}/><Key className="absolute left-3 top-2.5 text-gray-400" size={16}/></div></div>
-                   <button type="submit" style={{backgroundColor: themeColor}} className="w-full text-white font-bold py-2 rounded-lg hover:opacity-90 flex items-center justify-center gap-2">เข้าสู่ระบบ <ArrowUp className="rotate-90" size={16}/></button>
+                   <button type="submit" style={{backgroundColor: themeColor, color: themeTextColor}} className="w-full font-bold py-2 rounded-lg hover:opacity-90 flex items-center justify-center gap-2">เข้าสู่ระบบ <ArrowUp className="rotate-90" size={16}/></button>
                </form>
            </div>
            {permissionError && (
@@ -723,8 +743,8 @@ export default function App() {
                <button onClick={() => setPermissionError(false)} className="bg-gray-200 text-gray-700 px-3 py-1.5 rounded text-xs w-full">ปิดแจ้งเตือนนี้</button>
           </div>
       )}
-      {confirmModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 no-print"><div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6"><h3 className="text-lg font-bold mb-2">{confirmModal.title}</h3><p className="text-gray-600 mb-6">{confirmModal.message}</p><div className="flex gap-3 justify-end"><button onClick={()=>setConfirmModal(null)} className="px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button><button onClick={confirmModal.onConfirm} className="px-4 py-2 bg-red-600 text-white rounded-lg">ยืนยัน</button></div></div></div>}
-      {showAddJobModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 no-print"><div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6"><h3 className="text-lg font-bold mb-4">เพิ่มงานใหม่</h3><div className="space-y-4"><div className="space-y-1"><label className="block text-xs font-bold text-gray-500">เลือกวันที่:</label><input type="date" className="w-full border rounded p-2 text-lg font-bold" value={newJobDate} onChange={e=>setNewJobDate(e.target.value)}/></div><div className="space-y-1"><label className="block text-xs font-bold text-gray-500">เลือกเวลา:</label><select className="w-full border rounded p-2 text-lg font-bold" value={newJobTimeSlot} onChange={e=>setNewJobTimeSlot(e.target.value)}>{TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}</select></div></div><div className="flex gap-3 justify-end mt-6"><button onClick={()=>setShowAddJobModal(false)} className="px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button><button onClick={confirmAddJob} style={{backgroundColor: themeColor}} className="px-4 py-2 text-white rounded-lg hover:opacity-90">ตกลง</button></div></div></div>}
+      {confirmModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 no-print" onClick={(e) => e.stopPropagation()}><div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6"><h3 className="text-lg font-bold mb-2">{confirmModal.title}</h3><p className="text-gray-600 mb-6">{confirmModal.message}</p><div className="flex gap-3 justify-end"><button onClick={()=>setConfirmModal(null)} className="px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button><button onClick={confirmModal.onConfirm} className="px-4 py-2 bg-red-600 text-white rounded-lg">ยืนยัน</button></div></div></div>}
+      {showAddJobModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 no-print"><div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6"><h3 className="text-lg font-bold mb-4">เพิ่มงานใหม่</h3><div className="space-y-4"><div className="space-y-1"><label className="block text-xs font-bold text-gray-500">เลือกวันที่:</label><input type="date" className="w-full border rounded p-2 text-lg font-bold" value={newJobDate} onChange={e=>setNewJobDate(e.target.value)}/></div><div className="space-y-1"><label className="block text-xs font-bold text-gray-500">เลือกเวลา:</label><select className="w-full border rounded p-2 text-lg font-bold" value={newJobTimeSlot} onChange={e=>setNewJobTimeSlot(e.target.value)}>{TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}</select></div></div><div className="flex gap-3 justify-end mt-6"><button onClick={()=>setShowAddJobModal(false)} className="px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button><button onClick={confirmAddJob} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-4 py-2 rounded-lg hover:opacity-90">ตกลง</button></div></div></div>}
       {activeLeaveCell && (<div ref={leaveMenuRef} className="absolute bg-white shadow-xl border rounded-lg p-1 z-[999] min-w-[120px] no-print" style={{ top: activeLeaveCell.top, left: activeLeaveCell.left }}>{LEAVE_TYPES.map(type => (<button key={type.id} onClick={() => selectLeaveType(type.id)} className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 rounded flex items-center gap-2 ${type.color.replace('bg-', 'text-')}`}><span className={`w-4 h-4 flex items-center justify-center rounded-full text-[9px] ${type.color}`}>{type.short}</span>{type.label}</button>))}<div className="h-px bg-gray-100 my-1"></div><button onClick={() => selectLeaveType('clear')} className="w-full text-left px-3 py-2 text-xs text-red-500 hover:bg-red-50 rounded">ยกเลิกวันลา</button></div>)}
 
       {/* Header */}
@@ -732,13 +752,13 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 py-3">
           <div className="flex justify-between items-center mb-4">
              <div className="flex items-center gap-4"><div style={{borderColor: themeColor}} className="border-2 p-1 w-12 h-12 flex items-center justify-center"><div className="text-center" style={{color: themeColor}}><h1 className="text-[10px] font-serif font-bold tracking-widest leading-none">PASAYA</h1><p className="text-[4px] tracking-[0.1em] font-sans font-bold">CURTAIN</p></div></div><div className="h-8 w-px bg-gray-300"></div><div><h2 className="font-bold text-gray-700">Incentive Calculator</h2><div className="flex items-center gap-2 text-xs text-gray-500"><Users size={10}/> User: {currentUser.name} ({currentUser.role})</div></div></div>
-             <div className="flex gap-2"><button onClick={() => window.print()} style={{backgroundColor: themeColor}} className="px-3 py-2 rounded-md flex items-center gap-2 text-white hover:opacity-90 text-xs"><Printer size={14} /> Print</button><button onClick={handleLogout} className="px-3 py-2 rounded-md flex items-center gap-2 border hover:bg-gray-50 text-red-600 text-xs"><LogOut size={14} /> Out</button></div>
+             <div className="flex gap-2"><button onClick={() => window.print()} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-3 py-2 rounded-md flex items-center gap-2 hover:opacity-90 text-xs"><Printer size={14} /> Print</button><button onClick={handleLogout} className="px-3 py-2 rounded-md flex items-center gap-2 border hover:bg-gray-50 text-red-600 text-xs"><LogOut size={14} /> Out</button></div>
           </div>
           <div className="flex flex-wrap items-end gap-4 justify-between pt-2">
-            <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-lg border"><span className="text-[10px] uppercase font-bold text-gray-500 px-2">Period</span><div className="font-bold text-sm px-2 border-r border-gray-300" style={{color: themeColor}}>{period.name}</div><input type="date" value={period.start} onChange={e => setPeriod({...period, start: e.target.value, name: 'กำหนดเอง'})} className="bg-transparent border-none text-xs w-24"/><span className="text-gray-400">-</span><input type="date" value={period.end} onChange={e => setPeriod({...period, end: e.target.value, name: 'กำหนดเอง'})} className="bg-transparent border-none text-xs w-24"/><button onClick={() => setShowPeriodManager(!showPeriodManager)} className="p-1 hover:bg-white rounded"><FolderPlus size={14}/></button>{showPeriodManager && <div className="absolute top-full left-0 mt-2 w-72 bg-white border shadow-xl rounded-xl z-50 p-4"><h4 className="font-bold mb-2 text-gray-700">Saved Periods</h4><ul className="max-h-40 overflow-y-auto mb-3 space-y-1 text-xs">{savedPeriods.map((p, pIdx) => (<li key={`${p.id}-${pIdx}`} className="flex justify-between p-2 hover:bg-gray-50 cursor-pointer rounded">{editingPeriod?.id === p.id ? (<div className="flex gap-1 flex-1" onClick={e=>e.stopPropagation()}><input className="border rounded p-1 w-20" value={editingPeriod.name} onChange={e=>setEditingPeriod({...editingPeriod, name:e.target.value})}/><input type="date" className="border rounded p-1" value={editingPeriod.start} onChange={e=>setEditingPeriod({...editingPeriod, start:e.target.value})}/><input type="date" className="border rounded p-1" value={editingPeriod.end} onChange={e=>setEditingPeriod({...editingPeriod, end:e.target.value})}/><button onClick={handleUpdatePeriod} className="bg-green-500 text-white px-1 rounded">✓</button><button onClick={()=>setEditingPeriod(null)} className="bg-gray-300 px-1 rounded">x</button></div>) : (<><span onClick={() => {setPeriod(p); setShowPeriodManager(false);}} className="flex-1">{p.name}</span> <div className="flex gap-1"><button onClick={(e)=>{e.stopPropagation(); setEditingPeriod(p);}} className="text-gray-400 hover:text-blue-500"><Pencil size={12}/></button><button onClick={(e)=>{e.preventDefault(); e.stopPropagation(); handleDeletePeriod(p.id)}} className="text-gray-400 hover:text-red-500"><X size={12}/></button></div></>)}</li>))}</ul><div className="flex gap-1"><input className="border rounded px-2 py-1 text-xs flex-1" placeholder="ชื่อรอบ" value={newPeriodName} onChange={e=>setNewPeriodName(e.target.value)}/><button onClick={handleSavePeriod} style={{backgroundColor: themeColor}} className="text-white px-2 rounded text-xs hover:opacity-90">Save</button></div></div>}</div>
+            <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-lg border"><span className="text-[10px] uppercase font-bold text-gray-500 px-2">Period</span><div className="font-bold text-sm px-2 border-r border-gray-300" style={{color: themeColor}}>{period.name}</div><input type="date" value={period.start} onChange={e => setPeriod({...period, start: e.target.value, name: 'กำหนดเอง'})} className="bg-transparent border-none text-xs w-24"/><span className="text-gray-400">-</span><input type="date" value={period.end} onChange={e => setPeriod({...period, end: e.target.value, name: 'กำหนดเอง'})} className="bg-transparent border-none text-xs w-24"/><button onClick={() => setShowPeriodManager(!showPeriodManager)} className="p-1 hover:bg-white rounded"><FolderPlus size={14}/></button>{showPeriodManager && <div className="absolute top-full left-0 mt-2 w-72 bg-white border shadow-xl rounded-xl z-50 p-4"><h4 className="font-bold mb-2 text-gray-700">Saved Periods</h4><ul className="max-h-40 overflow-y-auto mb-3 space-y-1 text-xs">{savedPeriods.map((p, pIdx) => (<li key={`${p.id}-${pIdx}`} className="flex justify-between p-2 hover:bg-gray-50 cursor-pointer rounded">{editingPeriod?.id === p.id ? (<div className="flex gap-1 flex-1" onClick={e=>e.stopPropagation()}><input className="border rounded p-1 w-20" value={editingPeriod.name} onChange={e=>setEditingPeriod({...editingPeriod, name:e.target.value})}/><input type="date" className="border rounded p-1" value={editingPeriod.start} onChange={e=>setEditingPeriod({...editingPeriod, start:e.target.value})}/><input type="date" className="border rounded p-1" value={editingPeriod.end} onChange={e=>setEditingPeriod({...editingPeriod, end:e.target.value})}/><button onClick={handleUpdatePeriod} className="bg-green-500 text-white px-1 rounded">✓</button><button onClick={()=>setEditingPeriod(null)} className="bg-gray-300 px-1 rounded">x</button></div>) : (<><span onClick={() => {setPeriod(p); setShowPeriodManager(false);}} className="flex-1">{p.name}</span> <div className="flex gap-1"><button onClick={(e)=>{e.stopPropagation(); setEditingPeriod(p);}} className="text-gray-400 hover:text-blue-500"><Pencil size={12}/></button><button onClick={(e)=>{e.preventDefault(); e.stopPropagation(); handleDeletePeriod(p.id)}} className="text-gray-400 hover:text-red-500"><X size={12}/></button></div></>)}</li>))}</ul><div className="flex gap-1"><input className="border rounded px-2 py-1 text-xs flex-1" placeholder="ชื่อรอบ" value={newPeriodName} onChange={e=>setNewPeriodName(e.target.value)}/><button onClick={handleSavePeriod} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-2 rounded text-xs hover:opacity-90">Save</button></div></div>}</div>
             <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
                 {TABS.map(t => (
-                    <button key={t.id} onClick={() => setActiveTab(t.id)} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1 ${activeTab === t.id ? 'shadow text-white' : 'text-gray-500 hover:text-gray-700'}`} style={activeTab === t.id ? {backgroundColor: themeColor} : {}}>
+                    <button key={t.id} onClick={() => setActiveTab(t.id)} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1 ${activeTab === t.id ? 'shadow' : 'text-gray-500 hover:text-gray-700'}`} style={activeTab === t.id ? {backgroundColor: themeColor, color: themeTextColor} : {}}>
                         <t.icon size={12}/> {t.label}
                     </button>
                 ))}
@@ -754,7 +774,7 @@ export default function App() {
           {activeTab === 'dashboard' && (
              <div className="space-y-6">
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                    <div style={{backgroundColor: themeColor}} className="text-white p-4 rounded-xl shadow-lg relative overflow-hidden"><h3 className="text-xs uppercase font-bold opacity-70">Incentive รวม</h3><div className="text-xl font-bold mt-1">฿{calculatedData.totalIncentive.toLocaleString()}</div><DollarSign className="absolute right-2 bottom-2 opacity-10" size={40}/></div>
+                    <div style={{backgroundColor: themeColor, color: themeTextColor}} className="p-4 rounded-xl shadow-lg relative overflow-hidden"><h3 className="text-xs uppercase font-bold opacity-70">Incentive รวม</h3><div className="text-xl font-bold mt-1">฿{calculatedData.totalIncentive.toLocaleString()}</div><DollarSign className="absolute right-2 bottom-2 opacity-10" size={40}/></div>
                     <div className="bg-white border p-4 rounded-xl shadow-sm relative overflow-hidden"><h3 className="text-xs uppercase font-bold text-gray-500">จำนวนรางรวม</h3><div className="text-xl font-bold mt-1 text-gray-800">{calculatedData.totalRails.toLocaleString()} <span className="text-xs font-normal text-gray-400">ราง</span></div><Ruler className="absolute right-2 bottom-2 opacity-10 text-gray-500" size={40}/></div>
                     <div className="bg-white border p-4 rounded-xl shadow-sm relative overflow-hidden"><h3 className="text-xs uppercase font-bold text-gray-500">งานวัดพื้นที่</h3><div className="text-xl font-bold mt-1 text-gray-800">{calculatedData.totalMeasureJobs} <span className="text-xs font-normal text-gray-400">งาน</span></div><MapPin className="absolute right-2 bottom-2 opacity-10 text-gray-500" size={40}/></div>
                     <div className="bg-white border p-4 rounded-xl shadow-sm relative overflow-hidden"><h3 className="text-xs uppercase font-bold text-gray-500">จำนวนช่าง</h3><div className="text-xl font-bold mt-1 text-gray-800">{calculatedData.totalTechs} <span className="text-xs font-normal text-gray-400">คน</span></div><Users className="absolute right-2 bottom-2 opacity-10 text-gray-500" size={40}/></div>
@@ -774,7 +794,7 @@ export default function App() {
                  <div className="p-4 border-b flex justify-between items-center bg-gray-50 gap-4">
                      <h3 className="font-bold text-gray-700 whitespace-nowrap">รายการงาน</h3>
                      <div className="flex-1 max-w-md relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} /><input type="text" placeholder="ค้นหา: ชื่อลูกค้า, เลข Order, วันที่..." className="w-full pl-9 pr-4 py-1.5 border rounded-lg text-xs focus:outline-none" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}/>{searchQuery && (<button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={14} /></button>)}</div>
-                     <div className="flex gap-2"><button onClick={exportToCSV} className="bg-green-600 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1 hover:opacity-90"><FileSpreadsheet size={14}/> CSV</button><button onClick={initiateAddJob} style={{backgroundColor: themeColor}} className="text-white px-3 py-1.5 rounded text-xs flex items-center gap-1 hover:opacity-90"><Plus size={14}/> เพิ่ม</button></div>
+                     <div className="flex gap-2"><button onClick={exportToCSV} className="bg-green-600 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1 hover:opacity-90"><FileSpreadsheet size={14}/> CSV</button><button onClick={initiateAddJob} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-3 py-1.5 rounded text-xs flex items-center gap-1 hover:opacity-90"><Plus size={14}/> เพิ่ม</button></div>
                  </div>
                  <div className="overflow-x-auto"><table className="w-full text-left"><thead className="bg-gray-100 text-xs text-gray-500 font-bold uppercase"><tr><th className="p-3 text-center">#</th><th className="p-3">วันที่/เวลา</th><th className="p-3">รายละเอียด</th><th className="p-3">งาน</th><th className="p-3 text-center">ราง</th><th className="p-3">ทีมช่าง</th><th className="p-3 text-right">Incentive</th><th className="p-3 text-center">ลำดับ</th><th className="p-3"></th></tr></thead><tbody className="divide-y text-xs">{calculatedData.periodJobs.filter(j => { const q = searchQuery.toLowerCase(); return !q || (j.customer || '').toLowerCase().includes(q) || (j.orderNo || '').toLowerCase().includes(q) || (j.date || '').includes(q); }).map((j, i) => (<tr key={j.id} className="hover:bg-gray-50"><td className="p-3 text-center text-gray-400">{i+1}</td><td className="p-3 w-36 align-top"><input type="date" value={j.date} onChange={e=>updateJob(j.id,'date',e.target.value)} className="border rounded p-1 w-full mb-1"/><select className="border rounded p-1 w-full text-[10px]" value={j.timeSlot || DEFAULT_TIME_SLOT} onChange={e=>updateJob(j.id,'timeSlot',e.target.value)}>{TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}</select></td><td className="p-3 w-48 align-top space-y-1"><input placeholder="Order No." value={j.orderNo || ''} onChange={e=>updateJob(j.id,'orderNo',e.target.value)} className="border rounded p-1 w-full font-bold"/><input placeholder="ลูกค้า" value={j.customer||''} onChange={e=>updateJob(j.id,'customer',e.target.value)} className="border rounded p-1 w-full"/><input placeholder="สถานที่" value={j.location||''} onChange={e=>updateJob(j.id,'location',e.target.value)} className="border rounded p-1 w-full"/></td><td className="p-3 align-top"><select value={j.type} onChange={e=>updateJob(j.id,'type',e.target.value)} className="border rounded p-1 w-full">{JOB_TYPES.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}</select></td><td className="p-3 align-top"><input type="number" value={j.rails} onChange={e=>updateJob(j.id,'rails',e.target.value)} className="border rounded p-1 w-12 text-center"/></td><td className="p-3 align-top"><div className="flex flex-wrap gap-1">{teams.map(t => (
                    <div key={t.id} className="border p-1 rounded bg-white">
@@ -789,7 +809,7 @@ export default function App() {
                                    key={`${m.id}-${mIdx}`} 
                                    onClick={() => !isLeave && toggleTech(j.id, m.id)} 
                                    disabled={isLeave}
-                                   style={isSelected ? {backgroundColor: themeColor, color: 'white', borderColor: themeColor} : {}}
+                                   style={isSelected ? {backgroundColor: themeColor, color: themeTextColor, borderColor: themeColor} : {}}
                                    className={`px-1.5 py-0.5 rounded text-[9px] border 
                                      ${!isSelected && !isLeave ? 'bg-gray-100 text-gray-500' : ''}
                                      ${isLeave ? 'opacity-40 cursor-not-allowed bg-red-100 text-red-400 border-red-200' : ''}
@@ -822,7 +842,7 @@ export default function App() {
                                             <div className="flex gap-1"><span className="w-8">เริ่ม:</span><input type="date" className="border rounded p-1" value={editingMember.data.joinDate} onChange={e=>setEditingMember({...editingMember, data:{...editingMember.data, joinDate:e.target.value}})} /></div>
                                             <div className="flex gap-1"><span className="w-8">ออก:</span><input type="date" className="border rounded p-1" value={editingMember.data.resignDate} onChange={e=>setEditingMember({...editingMember, data:{...editingMember.data, resignDate:e.target.value}})} /></div>
                                             <div className="flex gap-2 mt-1">
-                                                <button onClick={handleUpdateMember} style={{backgroundColor: themeColor}} className="text-white px-2 py-1 rounded">บันทึก</button>
+                                                <button onClick={handleUpdateMember} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-2 py-1 rounded">บันทึก</button>
                                                 <button onClick={()=>setEditingMember(null)} className="bg-gray-200 px-2 py-1 rounded">ยกเลิก</button>
                                             </div>
                                         </div>
@@ -841,10 +861,10 @@ export default function App() {
                                 </li>
                             ))}
                           </ul>
-                          {addingMemberTo === t.id ? (<div className="bg-gray-50 p-2 rounded space-y-2"><input placeholder="ชื่อ" className="border w-full p-1 text-xs rounded" value={newMember.name} onChange={e=>setNewMember({...newMember, name:e.target.value})}/><div className="flex gap-1"><span className="text-[10px] w-8 pt-1">เริ่ม:</span><input type="date" className="border w-full p-1 text-xs rounded" value={newMember.joinDate} onChange={e=>setNewMember({...newMember, joinDate:e.target.value})}/></div><div className="flex gap-1"><span className="text-[10px] w-8 pt-1">ออก:</span><input type="date" className="border w-full p-1 text-xs rounded" value={newMember.resignDate} onChange={e=>setNewMember({...newMember, resignDate:e.target.value})}/></div><div className="flex gap-1"><button onClick={()=>handleAddMember(t.id)} style={{backgroundColor: themeColor}} className="text-white w-full rounded text-xs py-1">Save</button><button onClick={()=>setAddingMemberTo(null)} className="bg-gray-200 w-full rounded text-xs py-1">Cancel</button></div></div>) : (<button onClick={()=>{setAddingMemberTo(t.id); setNewMember({name:'',joinDate:new Date().toISOString().split('T')[0], resignDate: ''})}} className="w-full border-2 border-dashed p-2 rounded text-xs text-gray-400 hover:border-gray-400 hover:text-gray-600">+ เพิ่มช่าง</button>)}
+                          {addingMemberTo === t.id ? (<div className="bg-gray-50 p-2 rounded space-y-2"><input placeholder="ชื่อ" className="border w-full p-1 text-xs rounded" value={newMember.name} onChange={e=>setNewMember({...newMember, name:e.target.value})}/><div className="flex gap-1"><span className="text-[10px] w-8 pt-1">เริ่ม:</span><input type="date" className="border w-full p-1 text-xs rounded" value={newMember.joinDate} onChange={e=>setNewMember({...newMember, joinDate:e.target.value})}/></div><div className="flex gap-1"><span className="text-[10px] w-8 pt-1">ออก:</span><input type="date" className="border w-full p-1 text-xs rounded" value={newMember.resignDate} onChange={e=>setNewMember({...newMember, resignDate:e.target.value})}/></div><div className="flex gap-1"><button onClick={()=>handleAddMember(t.id)} style={{backgroundColor: themeColor, color: themeTextColor}} className="w-full rounded text-xs py-1">Save</button><button onClick={()=>setAddingMemberTo(null)} className="bg-gray-200 w-full rounded text-xs py-1">Cancel</button></div></div>) : (<button onClick={()=>{setAddingMemberTo(t.id); setNewMember({name:'',joinDate:new Date().toISOString().split('T')[0], resignDate: ''})}} className="w-full border-2 border-dashed p-2 rounded text-xs text-gray-400 hover:border-gray-400 hover:text-gray-600">+ เพิ่มช่าง</button>)}
                       </div>
                   ))}
-                  {isAddingTeam ? (<div className="bg-white p-4 rounded-xl shadow border"><input placeholder="ชื่อทีม" className="border w-full p-2 mb-2 rounded" autoFocus value={newTeamName} onChange={e=>setNewTeamName(e.target.value)}/><div className="flex gap-2"><button onClick={handleAddTeam} style={{backgroundColor: themeColor}} className="text-white flex-1 py-2 rounded">สร้าง</button><button onClick={()=>setIsAddingTeam(false)} className="bg-gray-100 flex-1 py-2 rounded">ยกเลิก</button></div></div>) : <button onClick={()=>setIsAddingTeam(true)} className="bg-gray-50 border-2 border-dashed rounded-xl flex items-center justify-center p-8 text-gray-400 hover:bg-white hover:border-gray-800 transition-all"><Plus size={32}/></button>}
+                  {isAddingTeam ? (<div className="bg-white p-4 rounded-xl shadow border"><input placeholder="ชื่อทีม" className="border w-full p-2 mb-2 rounded" autoFocus value={newTeamName} onChange={e=>setNewTeamName(e.target.value)}/><div className="flex gap-2"><button onClick={handleAddTeam} style={{backgroundColor: themeColor, color: themeTextColor}} className="flex-1 py-2 rounded">สร้าง</button><button onClick={()=>setIsAddingTeam(false)} className="bg-gray-100 flex-1 py-2 rounded">ยกเลิก</button></div></div>) : <button onClick={()=>setIsAddingTeam(true)} className="bg-gray-50 border-2 border-dashed rounded-xl flex items-center justify-center p-8 text-gray-400 hover:bg-white hover:border-gray-800 transition-all"><Plus size={32}/></button>}
               </div>
           )}
 
@@ -901,7 +921,7 @@ export default function App() {
                           <button onClick={() => setReportType('team')} className={`px-4 py-2 text-sm font-bold border-b-2 transition-all ${reportType === 'team' ? 'border-black text-black' : 'border-transparent text-gray-400'}`} style={reportType === 'team' ? {borderColor: themeColor, color: themeColor} : {}}>รายงานแยกตามทีม</button>
                           <button onClick={() => setReportType('tech')} className={`px-4 py-2 text-sm font-bold border-b-2 transition-all ${reportType === 'tech' ? 'border-black text-black' : 'border-transparent text-gray-400'}`} style={reportType === 'tech' ? {borderColor: themeColor, color: themeColor} : {}}>รายงานแยกตามบุคคล</button>
                       </div>
-                      <button onClick={() => window.print()} style={{backgroundColor: themeColor}} className="text-white px-4 py-2 rounded flex items-center gap-2 hover:opacity-90"><Printer size={16}/> สั่งพิมพ์ตารางนี้</button>
+                      <button onClick={() => window.print()} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-4 py-2 rounded flex items-center gap-2 hover:opacity-90"><Printer size={16}/> สั่งพิมพ์ตารางนี้</button>
                   </div>
                   
                   <div className="p-4">
@@ -1039,7 +1059,7 @@ export default function App() {
                           <input type="text" value={themeColor} onChange={e=>setThemeColor(e.target.value)} className="border rounded p-2 w-28 text-sm font-mono text-center uppercase" maxLength={7} placeholder="#424242" />
                           <div className="flex-1">
                               <p className="text-xs text-gray-500">สีที่เลือกจะเปลี่ยนสีปุ่มและแถบเมนูทั้งหมดสำหรับผู้ใช้งานทุกคน (พิมพ์ระบุรหัส HEX ได้เลย)</p>
-                              <button onClick={() => handleSaveTheme(themeColor)} className="mt-2 text-white px-4 py-1.5 rounded text-xs font-bold" style={{backgroundColor: themeColor}}>บันทึกสี</button>
+                              <button onClick={() => handleSaveTheme(themeColor)} className="mt-2 px-4 py-1.5 rounded text-xs font-bold" style={{backgroundColor: themeColor, color: themeTextColor}}>บันทึกสี</button>
                           </div>
                       </div>
                   </div>
@@ -1057,7 +1077,7 @@ export default function App() {
                               <option value="admin">Admin</option>
                               <option value="super_admin">Super Admin</option>
                           </select>
-                          <button onClick={handleAddAppUser} style={{backgroundColor: themeColor}} className="text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2">เพิ่ม</button>
+                          <button onClick={handleAddAppUser} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2">เพิ่ม</button>
                       </div>
                   </div>
 
