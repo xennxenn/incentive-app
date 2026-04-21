@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 
 // --- Firebase Imports ---
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps, getApp } from "firebase/app";
 import { 
   getAuth, 
   signInAnonymously, 
@@ -15,6 +15,7 @@ import {
 } from "firebase/auth";
 import { 
   getFirestore, 
+  initializeFirestore,
   collection, 
   doc, 
   addDoc, 
@@ -49,14 +50,21 @@ const manualConfig = {
 };
 
 try {
-  app = initializeApp(manualConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-} catch (error) {
-  if (!/already exists/.test(error.message)) { 
-      firebaseError = `Connection Error: ${error.message}`; 
-      console.error(firebaseError);
+  // ตรวจสอบว่ามี App ถูก Initialize ไว้หรือยัง
+  const apps = getApps();
+  if (apps.length === 0) {
+    app = initializeApp(manualConfig);
+    auth = getAuth(app);
+    // บังคับใช้ Long Polling เพื่อแก้ปัญหา WebSocket Timeout (Backend didn't respond within 10 seconds)
+    db = initializeFirestore(app, { experimentalForceLongPolling: true });
+  } else {
+    app = apps[0];
+    auth = getAuth(app);
+    db = getFirestore(app);
   }
+} catch (error) {
+  firebaseError = `Connection Error: ${error.message}`; 
+  console.error(firebaseError);
 }
 
 // 2. Static APP ID (ระบุชื่อตรงๆ เพื่อป้องกันปัญหาเครื่องหมาย / ที่ทำให้ Firestore Error)
@@ -168,7 +176,9 @@ export default function App() {
   const [newMember, setNewMember] = useState({ name: '', joinDate: '', resignDate: '' }); 
   const [showPeriodManager, setShowPeriodManager] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [jobSortOrder, setJobSortOrder] = useState('desc'); // รูปแบบการจัดเรียง (desc = ล่าสุดก่อน)
   
+  // New Admin UI State
   const [newUser, setNewUser] = useState({ username: '', password: '', name: '', role: 'admin' });
   const [newPeriodName, setNewPeriodName] = useState('');
   const [notification, setNotification] = useState(null); 
@@ -442,21 +452,39 @@ export default function App() {
       if (!newJobDate) return; 
       try {
           await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'jobs'), { 
-              date: newJobDate, customer: '', location: '', orderNo: '', timeSlot: newJobTimeSlot, type: 'install', rails: 0, selectedTechs: [], createdAt: new Date().toISOString(), orderIndex: Date.now() 
+              date: newJobDate, customer: '', location: '', orderNo: '', timeSlot: newJobTimeSlot, type: 'install', rails: 0, selectedTechs: [], createdAt: new Date().toISOString(), orderIndex: Date.now(), isChecked: false 
           }); 
           setShowAddJobModal(false); showNotification('เพิ่มงานสำเร็จ');
       } catch(e) { handlePermissionError(e); showNotification(`Error adding job: ${e.message}`, 'error'); }
   };
 
-  const updateJob = async (id, f, v) => { try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', id), { [f]: v }); } catch(e) { handlePermissionError(e); showNotification(`Update failed: ${e.message}`, 'error'); } };
-  const removeJob = async (id) => { try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', id)); } catch(e) { handlePermissionError(e); showNotification(`Delete failed: ${e.message}`, 'error'); } };
+  const updateJob = async (id, f, v) => { 
+      try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', id), { [f]: v }); } 
+      catch(e) { handlePermissionError(e); showNotification(`Update failed: ${e.message}`, 'error'); } 
+  };
+  
+  const removeJob = async (id) => { 
+      try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', id)); } 
+      catch(e) { handlePermissionError(e); showNotification(`Delete failed: ${e.message}`, 'error'); } 
+  };
+  
   const moveJob = async (id, dir, list) => { 
       const idx = list.findIndex(j => j.id === id); if(idx === -1 || idx+dir < 0 || idx+dir >= list.length) return; 
       const j1 = list[idx], j2 = list[idx+dir]; let o1 = j1.orderIndex || Date.now(), o2 = j2.orderIndex || (Date.now()-1000); if(o1 === o2) o1 += 1; 
       try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', j1.id), { orderIndex: o2 }); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', j2.id), { orderIndex: o1 }); } 
       catch(e) { handlePermissionError(e); showNotification(`Move failed: ${e.message}`, 'error'); }
   };
-  const toggleTech = async (jid, tid) => { const j = jobs.find(x => x.id === jid); const sel = j.selectedTechs || []; try { await updateJob(jid, 'selectedTechs', sel.includes(tid) ? sel.filter(x => x!==tid) : [...sel, tid]); } catch(e) { handlePermissionError(e); showNotification(`Toggle failed: ${e.message}`, 'error'); } };
+  
+  const toggleTech = async (jid, tid) => { 
+      const j = jobs.find(x => x.id === jid); const sel = j.selectedTechs || []; 
+      try { await updateJob(jid, 'selectedTechs', sel.includes(tid) ? sel.filter(x => x!==tid) : [...sel, tid]); } 
+      catch(e) { handlePermissionError(e); showNotification(`Toggle failed: ${e.message}`, 'error'); } 
+  };
+
+  const toggleJobCheck = async (id, currentStatus) => {
+      try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', id), { isChecked: !currentStatus }); } 
+      catch(e) { handlePermissionError(e); showNotification(`Toggle check failed: ${e.message}`, 'error'); }
+  };
   
   const handleSavePeriod = async () => { 
       if(newPeriodName) { 
@@ -484,18 +512,35 @@ export default function App() {
       });
   };
 
-  const handleUpdatePeriod = async () => { if (!editingPeriod || !editingPeriod.name) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'savedPeriods', editingPeriod.id), { name: editingPeriod.name, start: editingPeriod.start, end: editingPeriod.end }); setEditingPeriod(null); showNotification('อัปเดตรอบสำเร็จ'); } catch(e) { handlePermissionError(e); showNotification(`Update failed: ${e.message}`, 'error'); } };
+  const handleUpdatePeriod = async () => { 
+      if (!editingPeriod || !editingPeriod.name) return; 
+      try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'savedPeriods', editingPeriod.id), { name: editingPeriod.name, start: editingPeriod.start, end: editingPeriod.end }); setEditingPeriod(null); showNotification('อัปเดตรอบสำเร็จ'); } 
+      catch(e) { handlePermissionError(e); showNotification(`Update failed: ${e.message}`, 'error'); } 
+  };
 
   // --- CALCULATION & REPORTS LOGIC ---
   const calculatedData = useMemo(() => {
     try {
         const periodJobs = jobs.filter(j => j.date >= period.start && j.date <= period.end);
         
-        // Sorting Jobs: Newest Date First, Then Earliest Time First
+        // Sorting Jobs based on user preference (เรียงตามวันที่ และตามเวลา)
         periodJobs.sort((a, b) => {
-            const dateDiff = b.date.localeCompare(a.date);
-            if (dateDiff !== 0) return dateDiff;
-            return (a.timeSlot || '').localeCompare(b.timeSlot || '');
+            const dateA = a.date || '';
+            const dateB = b.date || '';
+            const timeA = a.timeSlot || '';
+            const timeB = b.timeSlot || '';
+
+            if (jobSortOrder === 'desc') {
+                // ล่าสุด -> เริ่มต้น
+                const dateDiff = dateB.localeCompare(dateA);
+                if (dateDiff !== 0) return dateDiff;
+                return timeB.localeCompare(timeA);
+            } else {
+                // เริ่มต้น -> ล่าสุด
+                const dateDiff = dateA.localeCompare(dateB);
+                if (dateDiff !== 0) return dateDiff;
+                return timeA.localeCompare(timeB);
+            }
         });
         
         const dailyTeamIncentive = {}; 
@@ -579,6 +624,7 @@ export default function App() {
                     });
                 }
 
+                // เรียงลำดับงานรายวันตามเวลาที่ระบุเพื่อให้ง่ายต่อการดู
                 const dayJobs = periodJobs.filter(j => j.date === day).sort((a,b) => (a.timeSlot||'').localeCompare(b.timeSlot||''));
                 
                 dayJobs.forEach(job => {
@@ -684,7 +730,7 @@ export default function App() {
         console.error("Calc Error", e);
         return { periodJobs: [], totalIncentive: 0, teamStats: [], individualStats: [], totalTechs: 0, periodWorkingDays: 0, totalRails: 0, totalMeasureJobs: 0, reportTeamLogs: {}, reportTechLogs: {} }; 
     }
-  }, [jobs, teams, holidays, leaves, period]);
+  }, [jobs, teams, holidays, leaves, period, jobSortOrder]);
 
   const exportToCSV = () => {
       const headers = ["วันที่", "ลูกค้า", "สถานที่", "Order No", "เวลา", "ประเภทงาน", "จำนวนราง", "ทีมช่าง", "รายชื่อช่าง", "ค่า Incentive"];
@@ -772,7 +818,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* Main Content Area - ปรับซ่อนเมื่อสั่งพิมพ์เฉพาะเมื่อไม่ได้อยู่แท็บ Reports */}
+      {/* Main Content Area */}
       <div className={`max-w-7xl mx-auto px-4 py-6 ${activeTab !== 'reports' ? 'no-print' : ''}`}>
         <ErrorBoundary>
           {/* Dashboard Tab */}
@@ -799,9 +845,20 @@ export default function App() {
                  <div className="p-4 border-b flex justify-between items-center bg-gray-50 gap-4">
                      <h3 className="font-bold text-gray-700 whitespace-nowrap">รายการงาน</h3>
                      <div className="flex-1 max-w-md relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} /><input type="text" placeholder="ค้นหา: ชื่อลูกค้า, เลข Order, วันที่..." className="w-full pl-9 pr-4 py-1.5 border rounded-lg text-xs focus:outline-none" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}/>{searchQuery && (<button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={14} /></button>)}</div>
-                     <div className="flex gap-2"><button onClick={exportToCSV} className="bg-green-600 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1 hover:opacity-90"><FileSpreadsheet size={14}/> CSV</button><button onClick={initiateAddJob} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-3 py-1.5 rounded text-xs flex items-center gap-1 hover:opacity-90"><Plus size={14}/> เพิ่ม</button></div>
+                     <div className="flex gap-2">
+                         <select 
+                             className="border rounded-lg text-xs px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-black bg-white"
+                             value={jobSortOrder}
+                             onChange={(e) => setJobSortOrder(e.target.value)}
+                         >
+                             <option value="desc">เรียงเวลา: ล่าสุดขึ้นก่อน</option>
+                             <option value="asc">เรียงเวลา: เก่าสุดขึ้นก่อน</option>
+                         </select>
+                         <button onClick={exportToCSV} className="bg-green-600 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1 hover:opacity-90"><FileSpreadsheet size={14}/> CSV</button>
+                         <button onClick={initiateAddJob} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-3 py-1.5 rounded text-xs flex items-center gap-1 hover:opacity-90"><Plus size={14}/> เพิ่ม</button>
+                     </div>
                  </div>
-                 <div className="overflow-x-auto"><table className="w-full text-left"><thead className="bg-gray-100 text-xs text-gray-500 font-bold uppercase"><tr><th className="p-3 text-center">#</th><th className="p-3">วันที่/เวลา</th><th className="p-3">รายละเอียด</th><th className="p-3">งาน</th><th className="p-3 text-center">ราง</th><th className="p-3">ทีมช่าง</th><th className="p-3 text-right">Incentive</th><th className="p-3 text-center">ลำดับ</th><th className="p-3"></th></tr></thead><tbody className="divide-y text-xs">{calculatedData.periodJobs.filter(j => { const q = searchQuery.toLowerCase(); return !q || (j.customer || '').toLowerCase().includes(q) || (j.orderNo || '').toLowerCase().includes(q) || (j.date || '').includes(q); }).map((j, i) => (<tr key={j.id} className="hover:bg-gray-50"><td className="p-3 text-center text-gray-400">{i+1}</td><td className="p-3 w-36 align-top"><input type="date" value={j.date} onChange={e=>updateJob(j.id,'date',e.target.value)} className="border rounded p-1 w-full mb-1"/><select className="border rounded p-1 w-full text-[10px]" value={j.timeSlot || DEFAULT_TIME_SLOT} onChange={e=>updateJob(j.id,'timeSlot',e.target.value)}>{TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}</select></td><td className="p-3 w-48 align-top space-y-1"><input placeholder="Order No." value={j.orderNo || ''} onChange={e=>updateJob(j.id,'orderNo',e.target.value)} className="border rounded p-1 w-full font-bold"/><input placeholder="ลูกค้า" value={j.customer||''} onChange={e=>updateJob(j.id,'customer',e.target.value)} className="border rounded p-1 w-full"/><input placeholder="สถานที่" value={j.location||''} onChange={e=>updateJob(j.id,'location',e.target.value)} className="border rounded p-1 w-full"/></td><td className="p-3 align-top"><select value={j.type} onChange={e=>updateJob(j.id,'type',e.target.value)} className="border rounded p-1 w-full">{JOB_TYPES.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}</select></td><td className="p-3 align-top"><input type="number" value={j.rails} onChange={e=>updateJob(j.id,'rails',e.target.value)} className="border rounded p-1 w-12 text-center"/></td><td className="p-3 align-top"><div className="flex flex-wrap gap-1">{teams.map(t => (
+                 <div className="overflow-x-auto"><table className="w-full text-left"><thead className="bg-gray-100 text-xs text-gray-500 font-bold uppercase"><tr><th className="p-3 text-center">#</th><th className="p-3">วันที่/เวลา</th><th className="p-3">รายละเอียด</th><th className="p-3">งาน</th><th className="p-3 text-center">ราง</th><th className="p-3">ทีมช่าง</th><th className="p-3 text-right">Incentive</th><th className="p-3 text-center">ตรวจสอบ</th><th className="p-3 text-center">ลำดับ</th><th className="p-3"></th></tr></thead><tbody className="divide-y text-xs">{calculatedData.periodJobs.filter(j => { const q = searchQuery.toLowerCase(); return !q || (j.customer || '').toLowerCase().includes(q) || (j.orderNo || '').toLowerCase().includes(q) || (j.date || '').includes(q); }).map((j, i) => (<tr key={j.id} className={`hover:bg-gray-50 ${j.isChecked ? 'bg-green-50/30' : ''}`}><td className="p-3 text-center text-gray-400">{i+1}</td><td className="p-3 w-36 align-top"><input type="date" value={j.date} onChange={e=>updateJob(j.id,'date',e.target.value)} className="border rounded p-1 w-full mb-1"/><select className="border rounded p-1 w-full text-[10px]" value={j.timeSlot || DEFAULT_TIME_SLOT} onChange={e=>updateJob(j.id,'timeSlot',e.target.value)}>{TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}</select></td><td className="p-3 w-48 align-top space-y-1"><input placeholder="Order No." value={j.orderNo || ''} onChange={e=>updateJob(j.id,'orderNo',e.target.value)} className="border rounded p-1 w-full font-bold"/><input placeholder="ลูกค้า" value={j.customer||''} onChange={e=>updateJob(j.id,'customer',e.target.value)} className="border rounded p-1 w-full"/><input placeholder="สถานที่" value={j.location||''} onChange={e=>updateJob(j.id,'location',e.target.value)} className="border rounded p-1 w-full"/></td><td className="p-3 align-top"><select value={j.type} onChange={e=>updateJob(j.id,'type',e.target.value)} className="border rounded p-1 w-full">{JOB_TYPES.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}</select></td><td className="p-3 align-top"><input type="number" value={j.rails} onChange={e=>updateJob(j.id,'rails',e.target.value)} className="border rounded p-1 w-12 text-center"/></td><td className="p-3 align-top"><div className="flex flex-wrap gap-1">{teams.map(t => (
                    <div key={t.id} className="border p-1 rounded bg-white">
                        <div className="font-bold text-[9px] mb-1">{t.name}</div>
                        <div className="flex gap-1 flex-wrap">
@@ -827,7 +884,7 @@ export default function App() {
                            })}
                        </div>
                    </div>
-               ))}</div></td><td className="p-3 text-right align-top font-bold">฿{j.calculatedValue.toLocaleString()}</td><td className="p-3 text-center align-top"><div className="flex flex-col items-center"><button onClick={()=>moveJob(j.id, -1, calculatedData.periodJobs)} className="text-gray-400 hover:text-black"><ArrowUp size={12}/></button><button onClick={()=>moveJob(j.id, 1, calculatedData.periodJobs)} className="text-gray-400 hover:text-black"><ArrowDown size={12}/></button></div></td><td className="p-3 text-center align-top"><button onClick={()=>removeJob(j.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={14}/></button></td></tr>))}</tbody></table></div>
+               ))}</div></td><td className="p-3 text-right align-top font-bold">฿{j.calculatedValue.toLocaleString()}</td><td className="p-3 text-center align-top"><button onClick={()=>toggleJobCheck(j.id, j.isChecked)} className="text-gray-500 hover:text-black">{j.isChecked ? <CheckSquare size={18} className="text-green-600" /> : <Square size={18} />}</button></td><td className="p-3 text-center align-top"><div className="flex flex-col items-center"><button onClick={()=>moveJob(j.id, -1, calculatedData.periodJobs)} className="text-gray-400 hover:text-black"><ArrowUp size={12}/></button><button onClick={()=>moveJob(j.id, 1, calculatedData.periodJobs)} className="text-gray-400 hover:text-black"><ArrowDown size={12}/></button></div></td><td className="p-3 text-center align-top"><button onClick={()=>removeJob(j.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={14}/></button></td></tr>))}</tbody></table></div>
              </div>
           )}
 
