@@ -3,7 +3,7 @@ import {
   Calendar, Users, DollarSign, FileText, Plus, Trash2, Edit2, 
   ChevronDown, CheckSquare, Square, Printer, Save, RefreshCw, X, FolderPlus,
   AlertCircle, CheckCircle, Cloud, Loader2, ArrowUp, ArrowDown, Lock, LogOut, UserPlus, Shield,
-  BarChart3, PieChart, UserCog, CalendarDays, Database, FileSpreadsheet, AlertTriangle, Clock, UserMinus, Pencil, Ruler, MapPin, Key, Palette, Search, ArrowRightLeft, Eraser
+  BarChart3, PieChart, UserCog, CalendarDays, Database, FileSpreadsheet, AlertTriangle, Clock, UserMinus, Pencil, Ruler, MapPin, Key, Palette, Search, ArrowRightLeft
 } from 'lucide-react';
 
 // --- Firebase Imports ---
@@ -737,7 +737,23 @@ export default function App() {
       </div>
   );
 
-  const printStyles = `@media print { @page { size: A4; margin: 1cm; } body, html, #root { background: white !important; height: auto !important; overflow: visible !important; } .no-print { display: none !important; } .print-only { display: block !important; position: absolute; top: 0; left: 0; width: 100%; } table { width: 100% !important; border-collapse: collapse !important; } th, td { border: 1px solid #ddd !important; padding: 4px !important; } .print-visible { display: block !important; } .print-only-table table { border: 1px solid black; } } .print-only { display: none; }`;
+  // ⚡️ PRINT STYLES FIXED FOR REPEATING HEADERS
+  const printStyles = `
+  @media print { 
+      @page { size: A4; margin: 1cm; } 
+      body, html, #root { background: white !important; height: auto !important; overflow: visible !important; } 
+      .no-print { display: none !important; } 
+      .print-only-block { display: block !important; } 
+      tr.print-only-row { display: table-row !important; } 
+      table { width: 100% !important; border-collapse: collapse !important; } 
+      th, td { padding: 4px !important; border: 1px solid #ccc !important; } 
+      thead { display: table-header-group; } 
+      tfoot { display: table-footer-group; } 
+      tr { page-break-inside: avoid; } 
+      .no-border-print { border: none !important; }
+  } 
+  .print-only-block, .print-only-row { display: none; }
+  `;
 
   return (
     <div className="min-h-screen bg-white text-sm font-sans text-gray-800 pb-20 relative">
@@ -965,12 +981,15 @@ export default function App() {
                               
                               {selectedReportTeamId && calculatedData.reportTeamLogs[selectedReportTeamId] && (
                                   <div className="overflow-x-auto print-only-table">
-                                      <div className="hidden print-visible text-center mb-4">
-                                          <img src={LOGO_URL} alt="PASAYA Logo" className="h-16 w-auto mx-auto mb-2 object-contain" />
-                                          <h3 className="font-bold text-lg">{calculatedData.reportTeamLogs[selectedReportTeamId].name} <br/><span className="text-sm font-normal">ประจำรอบ {period.name} ({formatDate(period.start)} - {formatDate(period.end)})</span></h3>
-                                      </div>
                                       <table className="w-full text-left text-xs border-collapse">
                                           <thead className="bg-gray-100">
+                                              <tr className="print-only-row bg-white">
+                                                  <th colSpan="9" className="text-center pb-6 pt-2 bg-white no-border-print" style={{ border: 'none' }}>
+                                                      <img src={LOGO_URL} alt="PASAYA Logo" className="h-16 w-auto mx-auto mb-2 object-contain" />
+                                                      <h3 className="font-bold text-lg text-black">{calculatedData.reportTeamLogs[selectedReportTeamId].name}</h3>
+                                                      <div className="text-sm font-normal text-gray-800">ประจำรอบ {period.name} ({formatDate(period.start)} - {formatDate(period.end)})</div>
+                                                  </th>
+                                              </tr>
                                               <tr><th className="border p-2">วันที่</th><th className="border p-2">เวลา</th><th className="border p-2">งาน</th><th className="border p-2">ลูกค้า</th><th className="border p-2">สถานที่</th><th className="border p-2 text-center">ราง (แบ่ง)</th><th className="border p-2 text-center">จำนวนช่าง (ในทีม)</th><th className="border p-2 text-center">หมายเหตุ</th><th className="border p-2 text-right">Incentive</th></tr>
                                           </thead>
                                           <tbody>
@@ -1027,12 +1046,15 @@ export default function App() {
 
                               {selectedReportTechId && calculatedData.reportTechLogs[selectedReportTechId] && (
                                   <div className="overflow-x-auto print-only-table">
-                                      <div className="hidden print-visible text-center mb-4">
-                                          <img src={LOGO_URL} alt="PASAYA Logo" className="h-16 w-auto mx-auto mb-2 object-contain" />
-                                          <h3 className="font-bold text-lg">{calculatedData.reportTechLogs[selectedReportTechId].name} <span className="text-sm font-normal text-gray-500">({calculatedData.reportTechLogs[selectedReportTechId].teamName})</span> <br/><span className="text-sm font-normal">ประจำรอบ {period.name} ({formatDate(period.start)} - {formatDate(period.end)})</span></h3>
-                                      </div>
                                       <table className="w-full text-left text-xs border-collapse">
                                           <thead className="bg-gray-100">
+                                              <tr className="print-only-row bg-white">
+                                                  <th colSpan="9" className="text-center pb-6 pt-2 bg-white no-border-print" style={{ border: 'none' }}>
+                                                      <img src={LOGO_URL} alt="PASAYA Logo" className="h-16 w-auto mx-auto mb-2 object-contain" />
+                                                      <h3 className="font-bold text-lg text-black">{calculatedData.reportTechLogs[selectedReportTechId].name} <span className="text-sm font-normal text-gray-500">({calculatedData.reportTechLogs[selectedReportTechId].teamName})</span></h3>
+                                                      <div className="text-sm font-normal text-gray-800">ประจำรอบ {period.name} ({formatDate(period.start)} - {formatDate(period.end)})</div>
+                                                  </th>
+                                              </tr>
                                               <tr><th className="border p-2">วันที่</th><th className="border p-2">เวลา</th><th className="border p-2">งาน</th><th className="border p-2">ลูกค้า</th><th className="border p-2">สถานที่</th><th className="border p-2 text-center">ราง (หาร)</th><th className="border p-2 text-center">จำนวนช่าง (ในทีม)</th><th className="border p-2 text-center">หมายเหตุ</th><th className="border p-2 text-right">Incentive</th></tr>
                                           </thead>
                                           <tbody>
@@ -1137,7 +1159,7 @@ export default function App() {
                               <p className="text-sm font-bold text-blue-800">เคลียร์รายชื่อช่างตกค้าง (Clear Ghost Data)</p>
                               <p className="text-xs text-blue-600 mt-1">ลบรายชื่อช่างที่ถูกลบไปแล้ว แต่ยังค้างอยู่ในประวัติงาน</p>
                           </div>
-                          <button onClick={handleCleanGhostData} className="bg-blue-600 text-white px-4 py-2 rounded text-xs hover:bg-blue-700 transition-colors flex items-center gap-1"><Eraser size={14}/> เคลียร์ข้อมูล</button>
+                          <button onClick={handleCleanGhostData} className="bg-blue-600 text-white px-4 py-2 rounded text-xs hover:bg-blue-700 transition-colors flex items-center gap-1"><RefreshCw size={14}/> เคลียร์ข้อมูล</button>
                       </div>
 
                       <div className="bg-orange-50 p-4 rounded-lg border border-orange-100 flex items-center justify-between">
@@ -1153,7 +1175,7 @@ export default function App() {
         </ErrorBoundary>
       </div>
       
-      <div className="print-only p-8">
+      <div className="print-only p-8 print-only-block">
           {activeTab !== 'reports' && (
               <>
                   <div className="text-center mb-6">
