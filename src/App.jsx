@@ -11,6 +11,7 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { 
   getAuth, 
   signInAnonymously, 
+  signInWithCustomToken,
   onAuthStateChanged
 } from "firebase/auth";
 import { 
@@ -31,14 +32,14 @@ import {
 } from "firebase/firestore";
 
 // ------------------------------------------------------------------
-// 🚀 NEW DEPLOYMENT CONFIGURATION (v6)
+// 🚀 DEPLOYMENT CONFIGURATION
 // ------------------------------------------------------------------
 let app;
 let auth;
 let db;
 let firebaseError = null;
 
-// 1. Hardcoded Config (บังคับใช้ Firebase ของโปรเจกต์ incentive-employ เสมอ 100%)
+// 1. Hardcoded Config (บังคับใช้ Firebase ของโปรเจกต์ incentive-employ)
 const manualConfig = {
   apiKey: "AIzaSyCRtYrko1XhpTTCRecRqKduASdSdimi64M",
   authDomain: "incentive-employ.firebaseapp.com",
@@ -54,7 +55,6 @@ try {
   if (apps.length === 0) {
     app = initializeApp(manualConfig);
     auth = getAuth(app);
-    // บังคับใช้ Long Polling เพื่อแก้ปัญหา WebSocket Timeout
     db = initializeFirestore(app, { experimentalForceLongPolling: true });
   } else {
     app = apps[0];
@@ -68,8 +68,8 @@ try {
   }
 }
 
-// 2. Static APP ID (ระบุชื่อตรงๆ เพื่อใช้กับ Database ของคุณ)
-const appId = 'pasaya-incentive-v6-production';
+// 2. SANITIZED APP ID
+const appId = 'pasaya_incentive_v6_production';
 
 // โลโก้หลักของแอป
 const LOGO_URL = 'https://lh3.googleusercontent.com/d/1xT2ysUSWkTcFxs1ztoGxZuQcnO_c66Tu';
@@ -86,13 +86,7 @@ class ErrorBoundary extends React.Component {
 }
 
 // --- Constants ---
-const DEFAULT_SUPER_ADMIN = {
-    username: 'T58121',
-    password: '1234',
-    name: 'Admin T58121',
-    role: 'super_admin'
-};
-
+const DEFAULT_SUPER_ADMIN = { username: 'T58121', password: '1234', name: 'Admin T58121', role: 'super_admin' };
 const DEFAULT_TEAMS_DATA = [
   { name: 'ทีมช่างนาย', members: [{id: 'm1', name: 'ช่างนาย', joinDate: '2024-01-01'}, {id: 'm2', name: 'ช่างอาท', joinDate: '2024-01-01'}, {id: 'm3', name: 'ช่างลิด', joinDate: '2024-01-01'}] },
   { name: 'ทีมช่างเบนซ์', members: [{id: 'm4', name: 'ช่างเบนซ์', joinDate: '2024-01-01'}, {id: 'm5', name: 'ช่างกี้', joinDate: '2024-01-01'}] },
@@ -110,14 +104,7 @@ const LEAVE_TYPES = [
     { id: 'absent', label: 'ขาดงาน', short: 'ข', color: 'bg-gray-200 text-gray-700' },
 ];
 
-const TIME_SLOTS = [
-    "10.00 - 11.30",
-    "10.00 - 14.30",
-    "10.00 - 17.00",
-    "13.00 - 14.30",
-    "13.00 - 17.00",
-    "15.30 - 17.00"
-];
+const TIME_SLOTS = [ "10.00 - 11.30", "10.00 - 14.30", "10.00 - 17.00", "13.00 - 14.30", "13.00 - 17.00", "15.30 - 17.00" ];
 const DEFAULT_TIME_SLOT = "10.00 - 11.30";
 
 const MAIN_TABS = [
@@ -199,14 +186,11 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [jobSortOrder, setJobSortOrder] = useState('desc'); 
   
-  // New Admin UI State
   const [newUser, setNewUser] = useState({ username: '', password: '', name: '', role: 'admin' });
-
   const [newPeriodName, setNewPeriodName] = useState('');
   const [notification, setNotification] = useState(null); 
   const [confirmModal, setConfirmModal] = useState(null);
   
-  // Add Job Modal State
   const [showAddJobModal, setShowAddJobModal] = useState(false);
   const [newJobDate, setNewJobDate] = useState('');
   const [newJobTimeSlot, setNewJobTimeSlot] = useState(DEFAULT_TIME_SLOT);
@@ -216,7 +200,6 @@ export default function App() {
   const [editingPeriod, setEditingPeriod] = useState(null); 
   
   const leaveMenuRef = useRef(null);
-
   const themeTextColor = useMemo(() => getContrastYIQ(themeColor), [themeColor]);
 
   const visibleTabs = useMemo(() => {
@@ -232,10 +215,8 @@ export default function App() {
   const requestConfirm = (title, message, onConfirm) => { setConfirmModal({ title, message, onConfirm }); };
 
   const handlePermissionError = (err) => {
-      console.error("Firebase Permission Error:", err);
-      if (err && err.message && (err.message.includes("Missing or insufficient permissions") || err.code === 'permission-denied')) {
-          setPermissionError(true);
-      }
+      console.error("Firebase Error:", err);
+      if (err?.message?.includes("Missing or insufficient permissions")) setPermissionError(true);
   };
 
   const openLeaveMenu = (e, techId, date) => {
@@ -257,7 +238,6 @@ export default function App() {
 
               const jobsOnDate = jobs.filter(j => j.date === date);
               let removedCount = 0;
-              
               for (const job of jobsOnDate) {
                   if ((job.selectedTechs || []).includes(techId)) {
                       const newSelection = job.selectedTechs.filter(id => id !== techId);
@@ -265,16 +245,10 @@ export default function App() {
                       removedCount++;
                   }
               }
-              if (removedCount > 0) {
-                  showNotification(`บันทึกวันลาและนำชื่อออกจาก ${removedCount} งานในวันนี้แล้ว`, 'warning');
-              } else {
-                  showNotification('บันทึกวันลาสำเร็จ');
-              }
+              if (removedCount > 0) showNotification(`บันทึกวันลาและนำชื่อออกจาก ${removedCount} งานในวันนี้แล้ว`, 'warning');
+              else showNotification('บันทึกวันลาสำเร็จ');
           }
-      } catch (err) {
-          handlePermissionError(err);
-          showNotification(`Error saving leave: ${err.message}`, 'error');
-      }
+      } catch (err) { handlePermissionError(err); showNotification(`Error: ${err.message}`, 'error'); }
       setActiveLeaveCell(null);
   };
 
@@ -283,10 +257,7 @@ export default function App() {
       try {
         if(holidays.includes(d)) await deleteDoc(ref);
         else await setDoc(ref, { date: d });
-      } catch (err) {
-        handlePermissionError(err);
-        showNotification(`Error managing holiday: ${err.message}`, 'error');
-      }
+      } catch (err) { handlePermissionError(err); showNotification(`Error: ${err.message}`, 'error'); }
   };
 
   useEffect(() => {
@@ -302,26 +273,14 @@ export default function App() {
     setFavicon(LOGO_URL);
   }, []);
 
-  // --- Auth & Init Effects ---
   useEffect(() => {
     if (!auth) return;
     const initAuth = async () => { 
-        try {
-            // ล็อกอินแบบ Anonymous ตรงเข้าโปรเจกต์ Firebase ของคุณเอง 100%
-            console.log("Authenticating Anonymously to custom Firebase...");
-            await signInAnonymously(auth); 
-        } catch (err) {
-            console.error("Auth Error", err);
-            firebaseError = `Auth Failed: ${err.message}`;
-        }
+        try { await signInAnonymously(auth); } catch (err) { console.error("Auth Error", err); firebaseError = `Auth Failed: ${err.message}`; }
     };
     initAuth();
     const unsubscribe = onAuthStateChanged(auth, (u) => { 
-        if (u) {
-            console.log("Firebase Connected:", u.uid);
-            setDbReady(true); 
-            setPermissionError(false);
-        }
+        if (u) { setDbReady(true); setPermissionError(false); }
     });
     return () => unsubscribe();
   }, []);
@@ -330,24 +289,16 @@ export default function App() {
     if (!dbReady || !db) return;
     try {
         const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'app_users');
-        const unsub = onSnapshot(colRef, async (snap) => {
-            const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-            setAppUsers(list);
-        }, handlePermissionError);
-
+        const unsub = onSnapshot(colRef, async (snap) => { setAppUsers(snap.docs.map(d => ({ id: d.id, ...d.data() }))); }, handlePermissionError);
         const unsubSettings = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'theme'), (docSnap) => { 
             if(docSnap.exists() && docSnap.data().color) setThemeColor(docSnap.data().color); 
         }, handlePermissionError);
-
         return () => { unsub(); unsubSettings(); };
-    } catch (e) {
-        console.error("Initialization query error:", e);
-    }
+    } catch (e) {}
   }, [dbReady]);
 
   useEffect(() => {
     if (!dbReady || !currentUser || !db) { setLoading(false); return; }
-    
     try {
         const unsubTeams = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), async (snap) => {
               const list = snap.docs.map(d => ({ ...d.data(), id: d.id })); setTeams(list);
@@ -356,114 +307,68 @@ export default function App() {
                  if (check.empty) { 
                      try {
                         DEFAULT_TEAMS_DATA.forEach(async (t) => await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), t)); 
-                        showNotification("สร้างข้อมูลทีมเริ่มต้น (Fresh Deployment)", "success"); 
-                     } catch(e) { console.error("Seed Error", e); }
+                     } catch(e) {}
                  }
               }
         }, handlePermissionError);
-
         const unsubJobs = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'jobs'), (s) => setJobs(s.docs.map(d => ({ ...d.data(), id: d.id }))), handlePermissionError);
         const unsubLeaves = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'leaves'), (s) => setLeaves(s.docs.map(d => ({ ...d.data(), id: d.id }))), handlePermissionError);
         const unsubHols = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'holidays'), (s) => setHolidays(s.docs.map(d => d.data().date)), handlePermissionError);
         const unsubPeriods = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'savedPeriods'), (s) => { setSavedPeriods(s.docs.map(d => ({ ...d.data(), id: d.id }))); setLoading(false); }, handlePermissionError);
-        
         return () => { unsubTeams(); unsubJobs(); unsubLeaves(); unsubHols(); unsubPeriods(); };
-    } catch (e) {
-        console.error("Data query error:", e);
-    }
+    } catch (e) {}
   }, [dbReady, currentUser]);
 
   useEffect(() => { localStorage.setItem(`pasaya_period_${appId}`, JSON.stringify(period)); }, [period]);
-  
   useEffect(() => {
       const storedUser = localStorage.getItem('pasaya_app_user');
-      if (storedUser) {
-          try {
-              setCurrentUser(JSON.parse(storedUser));
-          } catch(e) {}
-      }
+      if (storedUser) { try { setCurrentUser(JSON.parse(storedUser)); } catch(e) {} }
   }, []);
-
-  useEffect(() => {
-      if (activeTab === 'admin' && currentUser?.role !== 'super_admin') setActiveTab('dashboard');
-  }, [activeTab, currentUser]);
-
+  useEffect(() => { if (activeTab === 'admin' && currentUser?.role !== 'super_admin') setActiveTab('dashboard'); }, [activeTab, currentUser]);
   useEffect(() => { function handleClickOutside(event) { if (leaveMenuRef.current && !leaveMenuRef.current.contains(event.target)) setActiveLeaveCell(null); } document.addEventListener("mousedown", handleClickOutside); return () => document.removeEventListener("mousedown", handleClickOutside); }, [leaveMenuRef]);
 
-  const handleSaveTheme = async (color) => {
-      try {
-          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'theme'), { color });
-          showNotification('เปลี่ยนสีธีมสำเร็จ');
-      } catch (err) { handlePermissionError(err); showNotification(`Error: ${err.message}`, 'error'); }
-  };
+  const handleSaveTheme = async (color) => { try { await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'theme'), { color }); showNotification('เปลี่ยนสีธีมสำเร็จ'); } catch (err) { handlePermissionError(err); } };
 
   const handleLogin = async (e) => {
       e.preventDefault();
-      
       const inputUser = usernameInput.trim();
       const inputPass = passwordInput.trim();
-      
       if (inputUser === DEFAULT_SUPER_ADMIN.username && inputPass === DEFAULT_SUPER_ADMIN.password) {
            const adminData = { username: inputUser, role: 'super_admin', name: 'Admin T58121' };
            setCurrentUser(adminData);
            localStorage.setItem('pasaya_app_user', JSON.stringify(adminData));
            showNotification(`ยินดีต้อนรับ ${adminData.name}`);
-           setUsernameInput('');
-           setPasswordInput('');
-           
+           setUsernameInput(''); setPasswordInput('');
            if (db) {
                try {
                    const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'app_users'), where("username", "==", DEFAULT_SUPER_ADMIN.username));
-                   getDocs(q).then((snap) => {
-                       if (snap.empty) {
-                            addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'app_users'), DEFAULT_SUPER_ADMIN);
-                       }
-                   });
+                   getDocs(q).then((snap) => { if (snap.empty) addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'app_users'), DEFAULT_SUPER_ADMIN); });
                } catch (err) {}
            }
            return;
       }
-
       const dbUser = appUsers.find(u => u.username === inputUser && u.password === inputPass);
-      
       if (dbUser) {
           const userData = { username: dbUser.username, role: dbUser.role, name: dbUser.name || dbUser.username };
           setCurrentUser(userData);
           localStorage.setItem('pasaya_app_user', JSON.stringify(userData));
           showNotification(`ยินดีต้อนรับ ${userData.name}`);
-          setUsernameInput('');
-          setPasswordInput('');
-      } else {
-          showNotification('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', 'error');
-      }
+          setUsernameInput(''); setPasswordInput('');
+      } else { showNotification('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', 'error'); }
   };
 
-  const handleLogout = () => { 
-      setCurrentUser(null); 
-      localStorage.removeItem('pasaya_app_user'); 
-  };
+  const handleLogout = () => { setCurrentUser(null); localStorage.removeItem('pasaya_app_user'); };
 
   const handleAddAppUser = async () => {
-      if (!newUser.username || !newUser.password) { showNotification('กรุณากรอก Username และ Password', 'error'); return; }
-      if (appUsers.some(u => u.username === newUser.username)) { showNotification('Username นี้มีอยู่แล้ว', 'error'); return; }
-      
-      try {
-          await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'app_users'), newUser);
-          setNewUser({ username: '', password: '', name: '', role: 'admin' });
-          showNotification('เพิ่มผู้ใช้งานสำเร็จ');
-      } catch (e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
+      if (!newUser.username || !newUser.password) return showNotification('กรุณากรอกข้อมูล', 'error');
+      if (appUsers.some(u => u.username === newUser.username)) return showNotification('Username ซ้ำ', 'error');
+      try { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'app_users'), newUser); setNewUser({ username: '', password: '', name: '', role: 'admin' }); showNotification('เพิ่มผู้ใช้งานสำเร็จ'); } catch (e) { handlePermissionError(e); }
   };
 
   const handleRemoveAppUser = (id, username) => {
-      if (username === DEFAULT_SUPER_ADMIN.username) { showNotification('ลบ Super Admin หลักไม่ได้', 'error'); return; }
-      if (username === currentUser.username) { showNotification('ลบตัวเองไม่ได้', 'error'); return; }
-      
+      if (username === DEFAULT_SUPER_ADMIN.username || username === currentUser.username) return showNotification('ลบไม่ได้', 'error');
       requestConfirm('ลบผู้ใช้งาน', `ยืนยันลบ ${username}?`, async () => {
-          try {
-            await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'app_users', id));
-            setConfirmModal(null);
-            showNotification('ลบผู้ใช้งานสำเร็จ');
-          } catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
+          try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'app_users', id)); setConfirmModal(null); showNotification('ลบสำเร็จ'); } catch(e) { handlePermissionError(e); }
       });
   };
 
@@ -474,26 +379,18 @@ export default function App() {
               teams.forEach(t => batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'teams', t.id))); 
               await batch.commit(); 
               for (const t of DEFAULT_TEAMS_DATA) await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), t); 
-              setConfirmModal(null); 
-              showNotification('กู้คืนข้อมูลสำเร็จ');
-          } catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
+              setConfirmModal(null); showNotification('กู้คืนสำเร็จ');
+          } catch(e) { handlePermissionError(e); }
       }); 
   };
 
   const handleAddTeam = async () => { 
       if(!newTeamName) return;
-      try {
-          await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), { name: newTeamName, members: [] }); 
-          setIsAddingTeam(false); 
-          showNotification('เพิ่มทีมสำเร็จ');
-      } catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
+      try { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), { name: newTeamName, members: [] }); setIsAddingTeam(false); showNotification('เพิ่มสำเร็จ'); } catch(e) { handlePermissionError(e); }
   };
 
   const handleDeleteTeam = (id) => requestConfirm('ลบทีม', 'ยืนยัน?', async () => { 
-      try {
-        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', id)); 
-        setConfirmModal(null); 
-      } catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
+      try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', id)); setConfirmModal(null); } catch(e) { handlePermissionError(e); }
   });
 
   const handleAddMember = async (tid) => { 
@@ -502,10 +399,8 @@ export default function App() {
           try {
               const upd = [...(t.members||[]), { id: `m${Date.now()}`, ...newMember }]; 
               await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', tid), { members: upd }); 
-              setAddingMemberTo(null); 
-              setNewMember({ name: '', joinDate: '', resignDate: '' }); 
-              showNotification('เพิ่มสมาชิกสำเร็จ');
-          } catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
+              setAddingMemberTo(null); setNewMember({ name: '', joinDate: '', resignDate: '' }); showNotification('เพิ่มสำเร็จ');
+          } catch(e) { handlePermissionError(e); }
       } 
   };
   
@@ -517,135 +412,63 @@ export default function App() {
           try {
               const updatedMembers = team.members.map(m => m.id === memberId ? { ...m, ...data } : m);
               await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', teamId), { members: updatedMembers });
-              setEditingMember(null);
-              showNotification('อัปเดตข้อมูลสำเร็จ');
-          } catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
+              setEditingMember(null); showNotification('อัปเดตสำเร็จ');
+          } catch(e) { handlePermissionError(e); }
       }
   };
   
   const handleDeleteMember = (tid, mid) => requestConfirm('ลบสมาชิก', 'ยืนยัน?', async () => { 
       const t = teams.find(x => x.id === tid); 
-      try {
-          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', tid), { members: t.members.filter(m => m.id !== mid) }); 
-          setConfirmModal(null); 
-          showNotification('ลบสมาชิกสำเร็จ');
-      } catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
+      try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', tid), { members: t.members.filter(m => m.id !== mid) }); setConfirmModal(null); showNotification('ลบสำเร็จ'); } catch(e) { handlePermissionError(e); }
   });
   
   const initiateAddJob = () => { 
       const today = new Date().toISOString().split('T')[0]; 
       setNewJobDate((today >= period.start && today <= period.end) ? today : period.start); 
-      setNewJobTimeSlot(DEFAULT_TIME_SLOT);
-      setShowAddJobModal(true); 
+      setNewJobTimeSlot(DEFAULT_TIME_SLOT); setShowAddJobModal(true); 
   };
   
   const confirmAddJob = async () => { 
       if (!newJobDate) return; 
       try {
           await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'jobs'), { 
-              date: newJobDate, 
-              customer: '', 
-              location: '', 
-              orderNo: '', 
-              timeSlot: newJobTimeSlot, 
-              type: 'install', 
-              rails: 0, 
-              selectedTechs: [], 
-              createdAt: new Date().toISOString(), 
-              orderIndex: Date.now(),
-              isChecked: false
+              date: newJobDate, customer: '', location: '', orderNo: '', timeSlot: newJobTimeSlot, type: 'install', rails: 0, selectedTechs: [], createdAt: new Date().toISOString(), orderIndex: Date.now(), isChecked: false
           }); 
-          setShowAddJobModal(false); 
-          showNotification('เพิ่มงานสำเร็จ');
-      } catch(e) { handlePermissionError(e); showNotification(`Error adding job: ${e.message}`, 'error'); }
+          setShowAddJobModal(false); showNotification('เพิ่มงานสำเร็จ');
+      } catch(e) { handlePermissionError(e); }
   };
 
-  const updateJob = async (id, f, v) => {
-      try {
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', id), { [f]: v });
-      } catch(e) { handlePermissionError(e); showNotification(`Update failed: ${e.message}`, 'error'); }
-  };
-
-  const removeJob = async (id) => {
-      try {
-        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', id));
-      } catch(e) { handlePermissionError(e); showNotification(`Delete failed: ${e.message}`, 'error'); }
-  };
-
+  const updateJob = async (id, f, v) => { try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', id), { [f]: v }); } catch(e) {} };
+  const removeJob = async (id) => { try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', id)); } catch(e) {} };
   const moveJob = async (id, dir, list) => { 
-      const idx = list.findIndex(j => j.id === id); 
-      if(idx === -1 || idx+dir < 0 || idx+dir >= list.length) return; 
-      const j1 = list[idx], j2 = list[idx+dir]; 
-      let o1 = j1.orderIndex || Date.now(), o2 = j2.orderIndex || (Date.now()-1000); 
-      if(o1 === o2) o1 += 1; 
-      try {
-          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', j1.id), { orderIndex: o2 }); 
-          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', j2.id), { orderIndex: o1 }); 
-      } catch(e) { handlePermissionError(e); showNotification(`Move failed: ${e.message}`, 'error'); }
+      const idx = list.findIndex(j => j.id === id); if(idx === -1 || idx+dir < 0 || idx+dir >= list.length) return; 
+      const j1 = list[idx], j2 = list[idx+dir]; let o1 = j1.orderIndex || Date.now(), o2 = j2.orderIndex || (Date.now()-1000); if(o1 === o2) o1 += 1; 
+      try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', j1.id), { orderIndex: o2 }); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', j2.id), { orderIndex: o1 }); } catch(e) {}
   };
 
   const toggleTech = async (jid, tid) => { 
-      const j = jobs.find(x => x.id === jid); 
-      const sel = j.selectedTechs || []; 
-      try {
-          await updateJob(jid, 'selectedTechs', sel.includes(tid) ? sel.filter(x => x!==tid) : [...sel, tid]); 
-      } catch(e) { handlePermissionError(e); showNotification(`Toggle failed: ${e.message}`, 'error'); }
+      const j = jobs.find(x => x.id === jid); const sel = j.selectedTechs || []; 
+      try { await updateJob(jid, 'selectedTechs', sel.includes(tid) ? sel.filter(x => x!==tid) : [...sel, tid]); } catch(e) {}
   };
 
-  const toggleJobCheck = async (id, currentStatus) => {
-      try {
-          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', id), { isChecked: !currentStatus });
-      } catch(e) { handlePermissionError(e); showNotification(`Toggle check failed: ${e.message}`, 'error'); }
-  };
+  const toggleJobCheck = async (id, currentStatus) => { try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', id), { isChecked: !currentStatus }); } catch(e) {} };
 
   const handleSavePeriod = async () => { 
-      if(newPeriodName) { 
-          try {
-              const { id, ...cleanPeriodData } = period;
-              await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'savedPeriods'), { ...cleanPeriodData, name: newPeriodName }); 
-              setNewPeriodName(''); 
-              setShowPeriodManager(false); 
-              showNotification('บันทึกรอบสำเร็จ');
-          } catch(e) { handlePermissionError(e); showNotification(`Save failed: ${e.message}`, 'error'); }
-      } 
+      if(newPeriodName) { try { const { id, ...cleanPeriodData } = period; await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'savedPeriods'), { ...cleanPeriodData, name: newPeriodName }); setNewPeriodName(''); setShowPeriodManager(false); showNotification('บันทึกรอบสำเร็จ'); } catch(e) {} } 
   };
   
-  const handleDeletePeriod = (id) => {
-      setShowPeriodManager(false);
-      requestConfirm('ลบรอบบันทึก', 'ยืนยันการลบช่วงเวลานี้?', async () => { 
-          try {
-              await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'savedPeriods', id)); 
-              setConfirmModal(null); 
-              showNotification('ลบรอบบันทึกสำเร็จ');
-          } catch(e) { handlePermissionError(e); showNotification(`Delete failed: ${e.message}`, 'error'); }
-      });
-  };
+  const handleDeletePeriod = (id) => { setShowPeriodManager(false); requestConfirm('ลบรอบบันทึก', 'ยืนยันการลบ?', async () => { try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'savedPeriods', id)); setConfirmModal(null); showNotification('ลบสำเร็จ'); } catch(e) {} }); };
+  const handleUpdatePeriod = async () => { if (!editingPeriod || !editingPeriod.name) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'savedPeriods', editingPeriod.id), { name: editingPeriod.name, start: editingPeriod.start, end: editingPeriod.end }); setEditingPeriod(null); showNotification('อัปเดตสำเร็จ'); } catch(e) {} };
 
-  const handleUpdatePeriod = async () => {
-    if (!editingPeriod || !editingPeriod.name) return;
-    try {
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'savedPeriods', editingPeriod.id), {
-            name: editingPeriod.name,
-            start: editingPeriod.start,
-            end: editingPeriod.end
-        });
-        setEditingPeriod(null);
-        showNotification('อัปเดตรอบสำเร็จ');
-    } catch(e) { handlePermissionError(e); showNotification(`Update failed: ${e.message}`, 'error'); }
-  };
-
-  // --- CALCULATION LOGIC (Single Source of Truth) ---
+  // --- CALCULATION LOGIC (Single Source of Truth + Resign Logic Fix) ---
   const calculatedData = useMemo(() => {
     try {
         const periodJobs = jobs.filter(j => j.date >= period.start && j.date <= period.end);
         
-        // Sorting Jobs based on user preference
+        // Sorting Jobs based on dropdown
         periodJobs.sort((a, b) => {
-            const dateA = a.date || '';
-            const dateB = b.date || '';
-            const timeA = a.timeSlot || '';
-            const timeB = b.timeSlot || '';
-
+            const dateA = a.date || ''; const dateB = b.date || '';
+            const timeA = a.timeSlot || ''; const timeB = b.timeSlot || '';
             if (jobSortOrder === 'desc') {
                 const dateDiff = dateB.localeCompare(dateA);
                 if (dateDiff !== 0) return dateDiff;
@@ -658,10 +481,8 @@ export default function App() {
         });
         
         const dailyTeamIncentive = {}; 
-        let globalTotalRails = 0; 
-        let globalTotalMeasureJobs = 0;
+        let globalTotalRails = 0; let globalTotalMeasureJobs = 0;
 
-        // 1. Process all jobs and accumulate daily pots per team
         periodJobs.forEach(job => {
             let val = 0; 
             const cnt = (job.selectedTechs || []).length; 
@@ -671,7 +492,10 @@ export default function App() {
             if (!excludedTypes.includes(job.type)) globalTotalRails += rails;
             if (job.type === 'measure') globalTotalMeasureJobs += 1;
 
-            if (cnt > 0) {
+            // แก้บั๊กยอด 250 บาท ถ้าไม่ได้ติ๊กช่าง = 0 เสมอ
+            if (cnt === 0) {
+                val = 0;
+            } else {
                 if (job.type === 'measure') val = 250 * cnt;
                 else if (['travel_go', 'travel_back', 'fix_free'].includes(job.type)) val = 0;
                 else val = (250 * cnt) + (rails > 10 ? (rails - 10) * 20 : 0);
@@ -679,8 +503,7 @@ export default function App() {
             job.calculatedValue = val; 
 
             if (cnt > 0) {
-                const teamsInvolved = {}; 
-                let totalTechsInJob = 0;
+                const teamsInvolved = {}; let totalTechsInJob = 0;
                 (job.selectedTechs || []).forEach(tid => {
                     const t = teams.find(x => (x.members||[]).some(m => m.id === tid));
                     if (t) { teamsInvolved[t.id] = (teamsInvolved[t.id] || 0) + 1; totalTechsInJob++; }
@@ -692,17 +515,12 @@ export default function App() {
                 Object.keys(teamsInvolved).forEach(teamId => {
                     const teamTechCount = teamsInvolved[teamId];
                     const teamShare = (val * teamTechCount) / totalTechsInJob;
-                    
                     if (!dailyTeamIncentive[date][teamId]) dailyTeamIncentive[date][teamId] = { amount: 0, rails: 0, measures: 0 };
                     dailyTeamIncentive[date][teamId].amount += teamShare;
 
                     const totalTeams = Object.keys(teamsInvolved).length;
-                    if (!excludedTypes.includes(job.type)) {
-                        dailyTeamIncentive[date][teamId].rails += (rails / totalTeams);
-                    }
-                    if (job.type === 'measure') {
-                        dailyTeamIncentive[date][teamId].measures += 1; 
-                    }
+                    if (!excludedTypes.includes(job.type)) dailyTeamIncentive[date][teamId].rails += (rails / totalTeams);
+                    if (job.type === 'measure') dailyTeamIncentive[date][teamId].measures += 1; 
                 });
             }
         });
@@ -710,35 +528,26 @@ export default function App() {
         const daysInPeriod = getDaysArray(period.start, period.end);
         const periodWorkingDays = daysInPeriod.filter(d => !holidays.includes(d)).length;
         
-        const reportTeamLogs = {};
-        const reportTechLogs = {};
+        const reportTeamLogs = {}; const reportTechLogs = {};
         teams.forEach(t => {
             reportTeamLogs[t.id] = { name: t.name, rows: [] };
-            (t.members || []).forEach(m => {
-                reportTechLogs[m.id] = { name: m.name, teamName: t.name, rows: [] };
-            });
+            (t.members || []).forEach(m => { reportTechLogs[m.id] = { name: m.name, teamName: t.name, rows: [] }; });
         });
 
         const teamStats = teams.map(team => {
             const membersList = team.members || [];
-            const memberEarnings = {}; 
-            const memberLeavesList = {};
+            const memberEarnings = {}; const memberLeavesList = {};
             membersList.forEach(m => { memberEarnings[m.id] = 0; memberLeavesList[m.id] = []; });
             
-            let teamTotalEarned = 0; 
-            let teamTotalRails = 0; 
-            let teamTotalMeasures = 0;
+            let teamTotalEarned = 0; let teamTotalRails = 0; let teamTotalMeasures = 0;
             
             daysInPeriod.forEach(day => {
                 const dayStats = dailyTeamIncentive[day]?.[team.id];
                 const isHol = holidays.includes(day);
 
-                // --- LOGS CREATION ---
                 if (isHol) {
                     reportTeamLogs[team.id].rows.push({ isHoliday: true, date: day, time: '-', type: '-', customer: 'วันหยุดบริษัท', location: '-', rails: '-', techs: '-', note: '-', inc: '-' });
-                    membersList.forEach(m => {
-                        reportTechLogs[m.id].rows.push({ isHoliday: true, date: day, time: '-', type: '-', customer: 'วันหยุดบริษัท', location: '-', rails: '-', techs: '-', note: '-', inc: '-' });
-                    });
+                    membersList.forEach(m => { reportTechLogs[m.id].rows.push({ isHoliday: true, date: day, time: '-', type: '-', customer: 'วันหยุดบริษัท', location: '-', rails: '-', techs: '-', note: '-', inc: '-' }); });
                 } else {
                     membersList.forEach(m => {
                         const leave = leaves.find(l => l.techId === m.id && l.date === day);
@@ -750,7 +559,6 @@ export default function App() {
                     });
                 }
 
-                // Append Job Logs
                 const dayJobs = periodJobs.filter(j => j.date === day).sort((a,b) => (a.timeSlot||'').localeCompare(b.timeSlot||''));
                 dayJobs.forEach(job => {
                     const involvedTeams = {};
@@ -759,10 +567,7 @@ export default function App() {
                     
                     techIds.forEach(tid => {
                         const tMatch = teams.find(x => (x.members||[]).some(m => m.id === tid));
-                        if (tMatch) {
-                            if (!involvedTeams[tMatch.id]) involvedTeams[tMatch.id] = [];
-                            involvedTeams[tMatch.id].push(tid);
-                        }
+                        if (tMatch) { if (!involvedTeams[tMatch.id]) involvedTeams[tMatch.id] = []; involvedTeams[tMatch.id].push(tid); }
                     });
 
                     const totalTeams = Object.keys(involvedTeams).length;
@@ -781,9 +586,7 @@ export default function App() {
                         const typeLabel = JOB_TYPES.find(t=>t.id===job.type)?.label || job.type;
                         const noteStr = isShared ? 'งานควบ' : '';
 
-                        reportTeamLogs[team.id].rows.push({
-                            date: job.date, time: job.timeSlot || '-', type: typeLabel, customer: job.customer || '-', location: job.location || '-', rails: isExcluded ? '-' : Number(teamRailsShare.toFixed(2)), techs: teamTechCount, note: noteStr, inc: teamShareAmt
-                        });
+                        reportTeamLogs[team.id].rows.push({ date: job.date, time: job.timeSlot || '-', type: typeLabel, customer: job.customer || '-', location: job.location || '-', rails: isExcluded ? '-' : Number(teamRailsShare.toFixed(2)), techs: teamTechCount, note: noteStr, inc: teamShareAmt });
 
                         const activeMembers = membersList.filter(m => m.joinDate <= day && (!m.resignDate || m.resignDate > day));
                         const eligibleMembers = activeMembers.filter(m => {
@@ -792,32 +595,19 @@ export default function App() {
                         });
                         
                         const sharePerHead = eligibleMembers.length > 0 ? teamShareAmt / eligibleMembers.length : 0;
-                        // หารจำนวนรางตามคนที่มีสิทธิ์รับเงินในทีม เพื่อให้ยอดรวมรางตรงกับของทีม
                         const railsPerHead = eligibleMembers.length > 0 ? teamRailsShare / eligibleMembers.length : 0;
 
-                        // แก้ไข: แสดงรายการงานให้กับ "สมาชิกทุกคนที่มาทำงาน" (ไม่ช่ายแค่คนที่ถูกติ๊ก) เพื่อให้ยอดรวมตรงกับหน้าภาพรวม
                         activeMembers.forEach(m => {
                             const isEligible = eligibleMembers.some(em => em.id === m.id);
                             reportTechLogs[m.id].rows.push({
-                                date: job.date, 
-                                time: job.timeSlot || '-', 
-                                type: typeLabel, 
-                                customer: job.customer || '-', 
-                                location: job.location || '-', 
-                                rails: isExcluded ? '-' : (isEligible ? Number(railsPerHead.toFixed(2)) : 0), 
-                                techs: teamTechCount, 
-                                note: noteStr, 
-                                inc: isEligible ? sharePerHead : 0
+                                date: job.date, time: job.timeSlot || '-', type: typeLabel, customer: job.customer || '-', location: job.location || '-', rails: isExcluded ? '-' : (isEligible ? Number(railsPerHead.toFixed(2)) : 0), techs: teamTechCount, note: noteStr, inc: isEligible ? sharePerHead : 0
                             });
                         });
                     }
                 });
 
-                // --- FINANCIAL DISTRIBUTION ---
                 if (dayStats) { 
-                    teamTotalRails += dayStats.rails; 
-                    teamTotalMeasures += dayStats.measures; 
-                    
+                    teamTotalRails += dayStats.rails; teamTotalMeasures += dayStats.measures; 
                     const dailyPot = dayStats.amount || 0;
                     if (dailyPot > 0) {
                         teamTotalEarned += dailyPot;
@@ -826,121 +616,50 @@ export default function App() {
                             const leave = leaves.find(l => l.techId === m.id && l.date === day);
                             return !leave || leave.type === 'vacation';
                         });
-                        
                         const sharePerHead = eligibleMembers.length > 0 ? dailyPot / eligibleMembers.length : 0;
-                        activeMembers.forEach(m => { 
-                            if (eligibleMembers.some(em => em.id === m.id)) {
-                                memberEarnings[m.id] += sharePerHead; 
-                            }
-                        });
+                        activeMembers.forEach(m => { if (eligibleMembers.some(em => em.id === m.id)) memberEarnings[m.id] += sharePerHead; });
                     }
                 }
             });
 
             return { 
-                ...team, 
-                totalEarned: teamTotalEarned, 
-                totalRails: teamTotalRails, 
-                totalMeasures: teamTotalMeasures,
+                ...team, totalEarned: teamTotalEarned, totalRails: teamTotalRails, totalMeasures: teamTotalMeasures,
                 members: membersList.map(m => ({ 
-                    ...m, 
-                    incentive: memberEarnings[m.id],
+                    ...m, incentive: memberEarnings[m.id],
                     workDays: daysInPeriod.filter(d => !holidays.includes(d) && m.joinDate <= d && (!m.resignDate || m.resignDate > d) && !leaves.find(l => l.techId === m.id && l.date === d)).length,
                     leaves: memberLeavesList[m.id]
                 })) 
             };
         });
         
-        // Single Source of Truth for Dashboard Total
         const exactTotalIncentive = teamStats.reduce((sum, t) => sum + t.totalEarned, 0);
-
         const individualStats = teamStats.flatMap(t => (t.members || []).map(m => ({...m, teamName: t.name}))).sort((a,b) => b.incentive - a.incentive);
         const totalTechs = teamStats.reduce((acc, t) => acc + (t.members || []).length, 0);
 
-        return { 
-            periodJobs, 
-            totalIncentive: Math.round(exactTotalIncentive), 
-            teamStats, 
-            individualStats, 
-            totalTechs, 
-            periodWorkingDays, 
-            totalRails: globalTotalRails, 
-            totalMeasureJobs: globalTotalMeasureJobs, 
-            reportTeamLogs, 
-            reportTechLogs 
-        };
-    } catch (e) { 
-        console.error("Calc Error", e);
-        return { periodJobs: [], totalIncentive: 0, teamStats: [], individualStats: [], totalTechs: 0, periodWorkingDays: 0, totalRails: 0, totalMeasureJobs: 0, reportTeamLogs: {}, reportTechLogs: {} }; 
-    }
+        return { periodJobs, totalIncentive: Math.round(exactTotalIncentive), teamStats, individualStats, totalTechs, periodWorkingDays, totalRails: globalTotalRails, totalMeasureJobs: globalTotalMeasureJobs, reportTeamLogs, reportTechLogs };
+    } catch (e) { return { periodJobs: [], totalIncentive: 0, teamStats: [], individualStats: [], totalTechs: 0, periodWorkingDays: 0, totalRails: 0, totalMeasureJobs: 0, reportTeamLogs: {}, reportTechLogs: {} }; }
   }, [jobs, teams, holidays, leaves, period, jobSortOrder]);
 
   const exportToCSV = () => {
       const headers = ["วันที่", "ลูกค้า", "สถานที่", "Order No", "เวลา", "ประเภทงาน", "จำนวนราง", "ทีมช่าง", "รายชื่อช่าง", "ตรวจสอบ", "ค่า Incentive"];
       const rows = calculatedData.periodJobs.map(j => {
           const tNames = teams.flatMap(t => t.members || []).filter(m => (j.selectedTechs || []).includes(m.id)).map(m => m.name).join(", ");
-          return [
-              j.date, 
-              `"${(j.customer||'').replace(/"/g,'""')}"`, 
-              `"${(j.location||'').replace(/"/g,'""')}"`,
-              `"${(j.orderNo||'').replace(/"/g,'""')}"`,
-              j.timeSlot || `${j.timeIn || ''} - ${j.timeOut || ''}`,
-              JOB_TYPES.find(t => t.id === j.type)?.label || j.type, 
-              j.rails, 
-              `"${tNames}"`,
-              j.isChecked ? 'ตรวจแล้ว' : 'ยังไม่ตรวจ',
-              j.calculatedValue
-          ].join(",");
+          return [ j.date, `"${(j.customer||'').replace(/"/g,'""')}"`, `"${(j.location||'').replace(/"/g,'""')}"`, `"${(j.orderNo||'').replace(/"/g,'""')}"`, j.timeSlot || `${j.timeIn || ''} - ${j.timeOut || ''}`, JOB_TYPES.find(t => t.id === j.type)?.label || j.type, j.rails, `"${tNames}"`, j.isChecked ? 'ตรวจแล้ว' : 'ยังไม่ตรวจ', j.calculatedValue ].join(",");
       });
       const blob = new Blob(["\uFEFF" + [headers.join(","), ...rows].join("\n")], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `report.csv`; document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
-  if (firebaseError) return <div className="p-10 text-center text-red-600">Firebase Error: {firebaseError}</div>;
-
-  // --- LOGIN SCREEN ---
   if (!currentUser) return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-4">
            {notification && <div className="fixed top-4 bg-red-500 text-white px-4 py-2 rounded shadow">{notification.message}</div>}
            <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md text-center">
-               <div className="mb-6 flex justify-center">
-                   <div className="w-32 h-32 border-4 border-black flex items-center justify-center p-2 bg-white">
-                       <img src={LOGO_URL} alt="PASAYA Logo" className="h-24 w-auto object-contain" />
-                   </div>
-               </div>
+               <div className="mb-6 flex justify-center"><div className="w-32 h-32 border-4 border-black flex items-center justify-center p-2 bg-white"><img src={LOGO_URL} alt="PASAYA Logo" className="h-24 w-auto object-contain" /></div></div>
                <h2 className="text-xl font-bold text-gray-800 mb-6">Incentive Calculator System</h2>
                <form onSubmit={handleLogin} className="space-y-4 text-left">
-                   <div>
-                       <label className="text-xs font-bold text-gray-600 block mb-1">Username</label>
-                       <div className="relative">
-                           <input 
-                               type="text" 
-                               required 
-                               placeholder="Username" 
-                               className="w-full border rounded-lg px-4 py-2 pl-10"
-                               value={usernameInput} 
-                               onChange={e => setUsernameInput(e.target.value)}
-                           />
-                           <Users className="absolute left-3 top-2.5 text-gray-400" size={16}/>
-                       </div>
-                   </div>
-                   <div>
-                       <label className="text-xs font-bold text-gray-600 block mb-1">Password</label>
-                       <div className="relative">
-                           <input 
-                               type="password" 
-                               required 
-                               placeholder="Password" 
-                               className="w-full border rounded-lg px-4 py-2 pl-10"
-                               value={passwordInput} 
-                               onChange={e => setPasswordInput(e.target.value)}
-                           />
-                           <Key className="absolute left-3 top-2.5 text-gray-400" size={16}/>
-                       </div>
-                   </div>
-                   <button type="submit" style={{backgroundColor: themeColor, color: themeTextColor}} className="w-full font-bold py-2 rounded-lg hover:opacity-90 flex items-center justify-center gap-2">
-                        เข้าสู่ระบบ <ArrowUp className="rotate-90" size={16}/>
-                   </button>
+                   <div><label className="text-xs font-bold text-gray-600 block mb-1">Username</label><div className="relative"><input type="text" required placeholder="Username" className="w-full border rounded-lg px-4 py-2 pl-10" value={usernameInput} onChange={e => setUsernameInput(e.target.value)}/><Users className="absolute left-3 top-2.5 text-gray-400" size={16}/></div></div>
+                   <div><label className="text-xs font-bold text-gray-600 block mb-1">Password</label><div className="relative"><input type="password" required placeholder="Password" className="w-full border rounded-lg px-4 py-2 pl-10" value={passwordInput} onChange={e => setPasswordInput(e.target.value)}/><Key className="absolute left-3 top-2.5 text-gray-400" size={16}/></div></div>
+                   <button type="submit" style={{backgroundColor: themeColor, color: themeTextColor}} className="w-full font-bold py-2 rounded-lg hover:opacity-90 flex items-center justify-center gap-2">เข้าสู่ระบบ <ArrowUp className="rotate-90" size={16}/></button>
                </form>
            </div>
       </div>
@@ -951,48 +670,31 @@ export default function App() {
   return (
     <div className="min-h-screen bg-white text-sm font-sans text-gray-800 pb-20 relative">
       <style>{printStyles}</style>
-      {notification && <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-white flex items-center gap-2 animate-bounce-in ${notification.type === 'error' ? 'bg-red-500' : 'bg-green-600'} no-print`}>{notification.type === 'error' ? <AlertCircle size={20}/> : <CheckCircle size={20}/>}<span>{notification.message}</span></div>}
-      {permissionError && (
-          <div className="fixed bottom-4 left-4 z-[2000] max-w-md bg-red-50 border border-red-200 shadow-2xl rounded-xl p-4 flex flex-col gap-3 no-print">
-               <div><h3 className="font-bold text-red-700 flex items-center gap-2"><AlertTriangle size={16}/> เชื่อมต่อ Database ไม่ได้</h3><p className="text-xs text-red-600 mt-1">กรุณาตรวจสอบว่าตั้งค่า Firebase กฎ Rules ครบถ้วนและเปิด Anonymous Authentication แล้ว</p></div>
-               <button onClick={() => setPermissionError(false)} className="bg-gray-200 text-gray-700 px-3 py-1.5 rounded text-xs w-full">ปิดแจ้งเตือนนี้</button>
-          </div>
-      )}
-      {confirmModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 no-print" onClick={(e) => e.stopPropagation()}><div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6"><h3 className="text-lg font-bold mb-2">{confirmModal.title}</h3><p className="text-gray-600 mb-6">{confirmModal.message}</p><div className="flex gap-3 justify-end"><button onClick={()=>setConfirmModal(null)} className="px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button><button onClick={confirmModal.onConfirm} className="px-4 py-2 bg-red-600 text-white rounded-lg">ยืนยัน</button></div></div></div>}
+      {notification && <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-white flex items-center gap-2 ${notification.type === 'error' ? 'bg-red-500' : 'bg-green-600'} no-print`}>{notification.type === 'error' ? <AlertCircle size={20}/> : <CheckCircle size={20}/>}<span>{notification.message}</span></div>}
+      {confirmModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 no-print"><div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6"><h3 className="text-lg font-bold mb-2">{confirmModal.title}</h3><p className="text-gray-600 mb-6">{confirmModal.message}</p><div className="flex gap-3 justify-end"><button onClick={()=>setConfirmModal(null)} className="px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button><button onClick={confirmModal.onConfirm} className="px-4 py-2 bg-red-600 text-white rounded-lg">ยืนยัน</button></div></div></div>}
       {showAddJobModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 no-print"><div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6"><h3 className="text-lg font-bold mb-4">เพิ่มงานใหม่</h3><div className="space-y-4"><div className="space-y-1"><label className="block text-xs font-bold text-gray-500">เลือกวันที่:</label><input type="date" className="w-full border rounded p-2 text-lg font-bold" value={newJobDate} onChange={e=>setNewJobDate(e.target.value)}/></div><div className="space-y-1"><label className="block text-xs font-bold text-gray-500">เลือกเวลา:</label><select className="w-full border rounded p-2 text-lg font-bold" value={newJobTimeSlot} onChange={e=>setNewJobTimeSlot(e.target.value)}>{TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}</select></div></div><div className="flex gap-3 justify-end mt-6"><button onClick={()=>setShowAddJobModal(false)} className="px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button><button onClick={confirmAddJob} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-4 py-2 rounded-lg hover:opacity-90">ตกลง</button></div></div></div>}
       {activeLeaveCell && (<div ref={leaveMenuRef} className="absolute bg-white shadow-xl border rounded-lg p-1 z-[999] min-w-[120px] no-print" style={{ top: activeLeaveCell.top, left: activeLeaveCell.left }}>{LEAVE_TYPES.map(type => (<button key={type.id} onClick={() => selectLeaveType(type.id)} className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 rounded flex items-center gap-2 ${type.color.replace('bg-', 'text-')}`}><span className={`w-4 h-4 flex items-center justify-center rounded-full text-[9px] ${type.color}`}>{type.short}</span>{type.label}</button>))}<div className="h-px bg-gray-100 my-1"></div><button onClick={() => selectLeaveType('clear')} className="w-full text-left px-3 py-2 text-xs text-red-500 hover:bg-red-50 rounded">ยกเลิกวันลา</button></div>)}
 
-      {/* Header */}
       <div className="bg-white border-b sticky top-0 z-50 no-print">
         <div className="max-w-7xl mx-auto px-4 py-3">
           <div className="flex justify-between items-center mb-4">
-             <div className="flex items-center gap-4">
-                 <img src={LOGO_URL} alt="PASAYA Logo" className="h-10 w-auto object-contain" />
-                 <div className="h-8 w-px bg-gray-300"></div>
-                 <div><h2 className="font-bold text-gray-700">Incentive Calculator</h2><div className="flex items-center gap-2 text-xs text-gray-500"><Users size={10}/> User: {currentUser.name} ({currentUser.role})</div></div>
-             </div>
+             <div className="flex items-center gap-4"><img src={LOGO_URL} alt="PASAYA Logo" className="h-10 w-auto object-contain" /><div className="h-8 w-px bg-gray-300"></div><div><h2 className="font-bold text-gray-700">Incentive Calculator</h2><div className="flex items-center gap-2 text-xs text-gray-500"><Users size={10}/> User: {currentUser.name}</div></div></div>
              <div className="flex gap-2"><button onClick={() => window.print()} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-3 py-2 rounded-md flex items-center gap-2 hover:opacity-90 text-xs"><Printer size={14} /> Print</button><button onClick={handleLogout} className="px-3 py-2 rounded-md flex items-center gap-2 border hover:bg-gray-50 text-red-600 text-xs"><LogOut size={14} /> Out</button></div>
           </div>
           <div className="flex flex-wrap items-end gap-4 justify-between pt-2">
-            <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-lg border"><span className="text-[10px] uppercase font-bold text-gray-500 px-2">Period</span><div className="font-bold text-sm px-2 border-r border-gray-300" style={{color: themeColor}}>{period.name}</div><input type="date" value={period.start} onChange={e => setPeriod({...period, start: e.target.value, name: 'กำหนดเอง'})} className="bg-transparent border-none text-xs w-24"/><span className="text-gray-400">-</span><input type="date" value={period.end} onChange={e => setPeriod({...period, end: e.target.value, name: 'กำหนดเอง'})} className="bg-transparent border-none text-xs w-24"/><button onClick={() => setShowPeriodManager(!showPeriodManager)} className="p-1 hover:bg-white rounded"><FolderPlus size={14}/></button>{showPeriodManager && <div className="absolute top-full left-0 mt-2 w-72 bg-white border shadow-xl rounded-xl z-50 p-4"><h4 className="font-bold mb-2 text-gray-700">Saved Periods</h4><ul className="max-h-40 overflow-y-auto mb-3 space-y-1 text-xs">{savedPeriods.map((p, pIdx) => (<li key={`${p.id}-${pIdx}`} className="flex justify-between p-2 hover:bg-blue-50 cursor-pointer rounded">{editingPeriod?.id === p.id ? (<div className="flex gap-1 flex-1" onClick={e=>e.stopPropagation()}><input className="border rounded p-1 w-20" value={editingPeriod.name} onChange={e=>setEditingPeriod({...editingPeriod, name:e.target.value})}/><input type="date" className="border rounded p-1" value={editingPeriod.start} onChange={e=>setEditingPeriod({...editingPeriod, start:e.target.value})}/><input type="date" className="border rounded p-1" value={editingPeriod.end} onChange={e=>setEditingPeriod({...editingPeriod, end:e.target.value})}/><button onClick={handleUpdatePeriod} className="bg-green-500 text-white px-1 rounded">✓</button><button onClick={()=>setEditingPeriod(null)} className="bg-gray-300 px-1 rounded">x</button></div>) : (<><span onClick={() => {setPeriod(p); setShowPeriodManager(false);}} className="flex-1">{p.name}</span> <div className="flex gap-1"><button onClick={(e)=>{e.stopPropagation(); setEditingPeriod(p);}} className="text-gray-400 hover:text-blue-500"><Pencil size={12}/></button><button onClick={(e)=>{e.preventDefault(); e.stopPropagation(); handleDeletePeriod(p.id)}} className="text-gray-400 hover:text-red-500"><X size={12}/></button></div></>)}</li>))}</ul><div className="flex gap-1"><input className="border rounded px-2 py-1 text-xs flex-1" placeholder="ชื่อรอบ" value={newPeriodName} onChange={e=>setNewPeriodName(e.target.value)}/><button onClick={handleSavePeriod} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-2 rounded text-xs hover:opacity-90">Save</button></div></div>}</div>
+            <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-lg border"><span className="text-[10px] uppercase font-bold text-gray-500 px-2">Period</span><div className="font-bold text-sm px-2 border-r border-gray-300" style={{color: themeColor}}>{period.name}</div><input type="date" value={period.start} onChange={e => setPeriod({...period, start: e.target.value, name: 'กำหนดเอง'})} className="bg-transparent border-none text-xs w-24"/><span className="text-gray-400">-</span><input type="date" value={period.end} onChange={e => setPeriod({...period, end: e.target.value, name: 'กำหนดเอง'})} className="bg-transparent border-none text-xs w-24"/><button onClick={() => setShowPeriodManager(!showPeriodManager)} className="p-1 hover:bg-white rounded"><FolderPlus size={14}/></button>{showPeriodManager && <div className="absolute top-full left-0 mt-2 w-72 bg-white border shadow-xl rounded-xl z-50 p-4"><h4 className="font-bold mb-2 text-gray-700">Saved Periods</h4><ul className="max-h-40 overflow-y-auto mb-3 space-y-1 text-xs">{savedPeriods.map((p, pIdx) => (<li key={`${p.id}-${pIdx}`} className="flex justify-between p-2 hover:bg-blue-50 cursor-pointer rounded">{editingPeriod?.id === p.id ? (<div className="flex gap-1 flex-1" onClick={e=>e.stopPropagation()}><input className="border rounded p-1 w-20" value={editingPeriod.name} onChange={e=>setEditingPeriod({...editingPeriod, name:e.target.value})}/><input type="date" className="border rounded p-1" value={editingPeriod.start} onChange={e=>setEditingPeriod({...editingPeriod, start:e.target.value})}/><input type="date" className="border rounded p-1" value={editingPeriod.end} onChange={e=>setEditingPeriod({...editingPeriod, end:e.target.value})}/><button onClick={handleUpdatePeriod} className="bg-green-500 text-white px-1 rounded">✓</button><button onClick={()=>setEditingPeriod(null)} className="bg-gray-300 px-1 rounded">x</button></div>) : (<><span onClick={() => {setPeriod(p); setShowPeriodManager(false);}} className="flex-1">{p.name}</span> <div className="flex gap-1"><button onClick={(e)=>{e.stopPropagation(); setEditingPeriod(p);}} className="text-gray-400 hover:text-blue-500"><Pencil size={12}/></button><button onClick={(e)=>{e.stopPropagation(); handleDeletePeriod(p.id)}} className="text-gray-400 hover:text-red-500"><X size={12}/></button></div></>)}</li>))}</ul><div className="flex gap-1"><input className="border rounded px-2 py-1 text-xs flex-1" placeholder="ชื่อรอบ" value={newPeriodName} onChange={e=>setNewPeriodName(e.target.value)}/><button onClick={handleSavePeriod} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-2 rounded text-xs">Save</button></div></div>}</div>
             <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
                 {visibleTabs.map(t => {
                     const IconComponent = t.icon;
-                    return (
-                        <button key={t.id} onClick={() => setActiveTab(t.id)} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1 ${activeTab === t.id ? 'shadow' : 'text-gray-500 hover:text-gray-700'}`} style={activeTab === t.id ? {backgroundColor: themeColor, color: themeTextColor} : {}}>
-                            <IconComponent size={12}/> {t.label}
-                        </button>
-                    );
+                    return <button key={t.id} onClick={() => setActiveTab(t.id)} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1 ${activeTab === t.id ? 'shadow' : 'text-gray-500 hover:text-gray-700'}`} style={activeTab === t.id ? {backgroundColor: themeColor, color: themeTextColor} : {}}><IconComponent size={12}/> {t.label}</button>
                 })}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Main Content Area */}
       <div className={`max-w-7xl mx-auto px-4 py-6 ${activeTab !== 'reports' ? 'no-print' : ''}`}>
         <ErrorBoundary>
-          {/* Dashboard Tab */}
           {activeTab === 'dashboard' && (
              <div className="space-y-6">
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -1010,22 +712,14 @@ export default function App() {
              </div>
           )}
 
-          {/* Jobs Tab */}
           {activeTab === 'jobs' && (
              <div className="bg-white rounded-xl shadow border overflow-hidden">
                  <div className="p-4 border-b flex justify-between items-center bg-gray-50 gap-4">
                      <h3 className="font-bold text-gray-700 whitespace-nowrap">รายการงาน</h3>
                      <div className="flex-1 max-w-md relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} /><input type="text" placeholder="ค้นหา: ชื่อลูกค้า, เลข Order, วันที่..." className="w-full pl-9 pr-4 py-1.5 border rounded-lg text-xs focus:outline-none" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}/>{searchQuery && (<button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={14} /></button>)}</div>
                      <div className="flex gap-2">
-                         <select 
-                             className="border rounded-lg text-xs px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-black bg-white"
-                             value={jobSortOrder}
-                             onChange={(e) => setJobSortOrder(e.target.value)}
-                         >
-                             <option value="desc">เรียงเวลา: ล่าสุดขึ้นก่อน</option>
-                             <option value="asc">เรียงเวลา: เก่าสุดขึ้นก่อน</option>
-                         </select>
-                         <button onClick={exportToCSV} className="bg-green-600 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1 hover:opacity-90"><FileSpreadsheet size={14}/> CSV</button>
+                         <select className="border rounded-lg text-xs px-2 py-1.5 bg-white" value={jobSortOrder} onChange={(e) => setJobSortOrder(e.target.value)}><option value="desc">เรียงเวลา: ล่าสุดขึ้นก่อน</option><option value="asc">เรียงเวลา: เก่าสุดขึ้นก่อน</option></select>
+                         <button onClick={exportToCSV} className="bg-green-600 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1"><FileSpreadsheet size={14}/> CSV</button>
                          <button onClick={initiateAddJob} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-3 py-1.5 rounded text-xs flex items-center gap-1 hover:opacity-90"><Plus size={14}/> เพิ่ม</button>
                      </div>
                  </div>
@@ -1037,17 +731,23 @@ export default function App() {
                                const isSelected = (j.selectedTechs || []).includes(m.id);
                                const leave = leaves.find(l => l.techId === m.id && l.date === j.date);
                                const isLeave = !!leave;
+                               // เช็คว่าพนักงานคนนี้ทำงานอยู่หรือไม่ในวันที่นี้
+                               const isResigned = m.resignDate && j.date > m.resignDate;
+                               const isNotYetJoined = m.joinDate && j.date < m.joinDate;
+                               const isDisabled = isLeave || isResigned || isNotYetJoined;
+
                                return (
                                  <button 
                                    key={`${m.id}-${mIdx}`} 
-                                   onClick={() => !isLeave && toggleTech(j.id, m.id)} 
-                                   disabled={isLeave}
-                                   style={isSelected ? {backgroundColor: themeColor, color: themeTextColor, borderColor: themeColor} : {}}
+                                   onClick={() => !isDisabled && toggleTech(j.id, m.id)} 
+                                   disabled={isDisabled}
+                                   style={isSelected && !isDisabled ? {backgroundColor: themeColor, color: themeTextColor, borderColor: themeColor} : {}}
                                    className={`px-1.5 py-0.5 rounded text-[9px] border 
-                                     ${!isSelected && !isLeave ? 'bg-gray-100 text-gray-500' : ''}
+                                     ${!isSelected && !isDisabled ? 'bg-gray-100 text-gray-500' : ''}
                                      ${isLeave ? 'opacity-40 cursor-not-allowed bg-red-100 text-red-400 border-red-200' : ''}
+                                     ${isResigned || isNotYetJoined ? 'line-through bg-gray-200 text-gray-400 cursor-not-allowed border-gray-300' : ''}
                                    `}
-                                   title={isLeave ? `ลา: ${LEAVE_TYPES.find(lt=>lt.id===leave.type)?.label}` : ''}
+                                   title={isLeave ? `ลา: ${LEAVE_TYPES.find(lt=>lt.id===leave.type)?.label}` : (isResigned ? 'ลาออกแล้ว' : '')}
                                  >
                                    {m.name}
                                  </button>
@@ -1059,7 +759,6 @@ export default function App() {
              </div>
           )}
 
-          {/* Teams Tab */}
           {activeTab === 'teams' && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {teams.map(t => (
@@ -1101,7 +800,6 @@ export default function App() {
               </div>
           )}
 
-          {/* Calendar Tab */}
           {activeTab === 'calendar' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="bg-white p-6 rounded-xl shadow border">
@@ -1130,23 +828,14 @@ export default function App() {
                       <h3 className="font-bold mb-4 flex items-center gap-2"><Users className="text-orange-500"/> วันลาพนักงาน</h3>
                       <div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr><th className="text-left sticky left-0 bg-white p-2 min-w-[100px]">ชื่อ</th>{getDaysArray(period.start, period.end).map(d=><th key={d} className="min-w-[30px] p-1 text-center bg-gray-50 border-b"><div className="text-[8px] text-gray-400">{parseInt(d.split('-')[2])}</div></th>)}</tr></thead>
                       <tbody>
-                      {teams.flatMap(t => 
-                            (t.members||[]).map(m => ({ ...m, teamId: t.id }))
-                        ).map((m, flatIdx) => (
+                      {teams.flatMap(t => (t.members||[]).map(m => ({ ...m, teamId: t.id }))).map((m, flatIdx) => (
                             <tr key={`${m.id}-${flatIdx}`} className="hover:bg-gray-50">
                                 <td className="py-2 sticky left-0 bg-white border-r font-medium pl-2">{m.name}</td>
                                 {getDaysArray(period.start, period.end).map(d => {
                                     const l = leaves.find(x => x.techId === m.id && x.date === d);
                                     const holiday = holidays.includes(d);
                                     const leaveType = l ? LEAVE_TYPES.find(t => t.id === l.type) : null;
-                                    return (
-                                        <td 
-                                            key={d} 
-                                            onClick={(e) => !holiday && openLeaveMenu(e, m.id, d)} 
-                                            className={`border text-center cursor-pointer ${holiday ? 'bg-red-50' : ''} ${leaveType ? leaveType.color : ''}`}>
-                                            {leaveType ? leaveType.short : ''}
-                                        </td>
-                                    );
+                                    return <td key={d} onClick={(e) => !holiday && openLeaveMenu(e, m.id, d)} className={`border text-center cursor-pointer ${holiday ? 'bg-red-50' : ''} ${leaveType ? leaveType.color : ''}`}>{leaveType ? leaveType.short : ''}</td>
                                 })}
                             </tr>
                         ))}
@@ -1155,7 +844,6 @@ export default function App() {
               </div>
           )}
 
-          {/* New Reports Tab */}
           {activeTab === 'reports' && (
               <div className="bg-white rounded-xl shadow border overflow-hidden">
                   <div className="p-4 border-b flex justify-between items-center bg-gray-50 no-print">
@@ -1294,7 +982,6 @@ export default function App() {
               </div>
           )}
 
-          {/* Admin Tab */}
           {activeTab === 'admin' && currentUser?.role === 'super_admin' && (
               <div className="bg-white p-6 rounded-xl shadow border max-w-2xl mx-auto">
                   <h3 className="font-bold text-lg mb-6 flex items-center gap-2"><Shield className="text-blue-600"/> การตั้งค่าผู้ดูแลระบบ (Super Admin)</h3>
