@@ -90,11 +90,14 @@ const DEFAULT_SUPER_ADMIN = { username: 'T58121', password: '1234', name: 'Admin
 const JOB_TYPES = [
   { id: 'measure', label: 'วัดพื้นที่' }, { id: 'travel_go', label: 'วันเดินทางไป' }, { id: 'travel_back', label: 'วันเดินทางกลับ' }, { id: 'install', label: 'ติดตั้ง' }, { id: 'install_high', label: 'ติดตั้ง/บันไดสูง' }, { id: 'install_scaffold', label: 'ติดตั้ง/นั่งร้าน' }, { id: 'fix', label: 'แก้ไข' }, { id: 'fix_scaffold', label: 'แก้ไข/นั่งร้าน' }, { id: 'fix_free', label: 'แก้ไขซ้ำ/ไม่คิด' },
 ];
+
+// เพิ่ม No Incentive เข้าไปในปฏิทิน
 const LEAVE_TYPES = [
     { id: 'sick', label: 'ลาป่วย', short: 'ป', color: 'bg-red-100 text-red-700' }, 
     { id: 'business', label: 'ลากิจ', short: 'ก', color: 'bg-yellow-100 text-yellow-700' }, 
     { id: 'vacation', label: 'พักร้อน', short: 'พ', color: 'bg-green-100 text-green-700' }, 
     { id: 'absent', label: 'ขาดงาน', short: 'ข', color: 'bg-gray-200 text-gray-700' },
+    { id: 'no_inc', label: 'No Incentive', short: 'N', color: 'bg-purple-100 text-purple-700' }, 
 ];
 
 const TIME_SLOTS = [ "10.00 - 11.30", "10.00 - 14.30", "10.00 - 17.00", "13.00 - 14.30", "13.00 - 17.00", "15.30 - 17.00" ];
@@ -166,11 +169,9 @@ export default function App() {
   const [selectedReportTeamId, setSelectedReportTeamId] = useState('');
   const [selectedReportTechId, setSelectedReportTechId] = useState('');
   
-  // Login Inputs
   const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
 
-  // UI State
   const [newTeamName, setNewTeamName] = useState('');
   const [isAddingTeam, setIsAddingTeam] = useState(false);
   const [addingMemberTo, setAddingMemberTo] = useState(null); 
@@ -191,8 +192,6 @@ export default function App() {
   const [activeLeaveCell, setActiveLeaveCell] = useState(null); 
   const [editingMember, setEditingMember] = useState(null); 
   const [editingPeriod, setEditingPeriod] = useState(null); 
-
-  // State สำหรับจัดการการย้ายทีม
   const [transferringMember, setTransferringMember] = useState(null);
   
   const leaveMenuRef = useRef(null);
@@ -232,17 +231,22 @@ export default function App() {
               if (existing) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'leaves', existing.id), { type }); 
               else await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'leaves'), { techId, date, type }); 
 
-              const jobsOnDate = jobs.filter(j => j.date === date);
-              let removedCount = 0;
-              for (const job of jobsOnDate) {
-                  if ((job.selectedTechs || []).includes(techId)) {
-                      const newSelection = job.selectedTechs.filter(id => id !== techId);
-                      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', job.id), { selectedTechs: newSelection });
-                      removedCount++;
+              // เอาชื่อออกจากงานอัตโนมัติ "เฉพาะเมื่อ" เป็นการลาหยุดจริงๆ ไม่ใช่ No Incentive
+              if (type !== 'no_inc') {
+                  const jobsOnDate = jobs.filter(j => j.date === date);
+                  let removedCount = 0;
+                  for (const job of jobsOnDate) {
+                      if ((job.selectedTechs || []).includes(techId)) {
+                          const newSelection = job.selectedTechs.filter(id => id !== techId);
+                          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', job.id), { selectedTechs: newSelection });
+                          removedCount++;
+                      }
                   }
+                  if (removedCount > 0) showNotification(`บันทึกวันลาและนำชื่อออกจาก ${removedCount} งานในวันนี้แล้ว`, 'warning');
+                  else showNotification('บันทึกสำเร็จ');
+              } else {
+                  showNotification('ตั้งค่าสถานะ No Incentive สำเร็จ');
               }
-              if (removedCount > 0) showNotification(`บันทึกวันลาและนำชื่อออกจาก ${removedCount} งานในวันนี้แล้ว`, 'warning');
-              else showNotification('บันทึกวันลาสำเร็จ');
           }
       } catch (err) { handlePermissionError(err); showNotification(`Error: ${err.message}`, 'error'); }
       setActiveLeaveCell(null);
@@ -367,14 +371,12 @@ export default function App() {
               let cleanedCount = 0;
               const validMemberIds = new Set();
               
-              // เก็บ ID พนักงานปัจจุบันทั้งหมด
               teams.forEach(t => (t.members || []).forEach(m => validMemberIds.add(m.id)));
 
               jobs.forEach(job => {
                   const originalTechs = job.selectedTechs || [];
                   const validTechs = originalTechs.filter(id => validMemberIds.has(id));
                   
-                  // ถ้าจำนวนเปลี่ยนไป แสดงว่ามี ID ผี ให้บันทึกทับด้วย ID ที่ถูกต้อง
                   if (validTechs.length !== originalTechs.length) {
                       const jobRef = doc(db, 'artifacts', appId, 'public', 'data', 'jobs', job.id);
                       batch.update(jobRef, { selectedTechs: validTechs });
@@ -389,10 +391,7 @@ export default function App() {
                   showNotification('ไม่พบรายชื่อช่างตกค้างในระบบ', 'success');
               }
               setConfirmModal(null);
-          } catch (e) {
-              handlePermissionError(e);
-              showNotification(`Error: ${e.message}`, 'error');
-          }
+          } catch (e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
       });
   };
 
@@ -434,7 +433,6 @@ export default function App() {
       try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', tid), { members: t.members.filter(m => m.id !== mid) }); setConfirmModal(null); showNotification('ลบสำเร็จ'); } catch(e) { handlePermissionError(e); }
   });
 
-  // ฟังก์ชันยืนยันการย้ายทีม
   const handleConfirmTransfer = async () => {
       const { teamId, member, targetTeamId, date } = transferringMember;
       if (!targetTeamId || !date) return showNotification('กรุณาเลือกทีมปลายทางและวันที่', 'error');
@@ -444,23 +442,16 @@ export default function App() {
 
       if (sourceTeam && targetTeam) {
           try {
-              // 1. ระบุวันลาออก (Resign Date) ให้ทีมเก่า เป็นวันที่เลือกว่าย้าย
               const updatedSourceMembers = sourceTeam.members.map(m => m.id === member.id ? { ...m, resignDate: date } : m);
-              
-              // 2. สร้างรายการสมาชิกใหม่ในทีมปลายทาง เริ่มต้นจากวันที่ย้าย
               const newMemberRecord = { id: `m${Date.now()}`, name: member.name, joinDate: date, resignDate: '' };
               const updatedTargetMembers = [...(targetTeam.members || []), newMemberRecord];
 
-              // 3. บันทึกข้อมูลทั้ง 2 ทีม
               await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', teamId), { members: updatedSourceMembers });
               await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', targetTeamId), { members: updatedTargetMembers });
               
               setTransferringMember(null);
               showNotification('ย้ายทีมพร้อมบันทึกประวัติสำเร็จ');
-          } catch(e) {
-              handlePermissionError(e);
-              showNotification(`Error: ${e.message}`, 'error');
-          }
+          } catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
       }
   };
   
@@ -533,13 +524,20 @@ export default function App() {
             if (!excludedTypes.includes(job.type)) globalTotalRails += rails;
             if (job.type === 'measure') globalTotalMeasureJobs += 1;
 
-            // ⚡️ FILTER GHOST IDs: นับเฉพาะช่างที่มีตัวตนอยู่ในทีมใดๆ ณ ปัจจุบันเท่านั้น
+            // ⚡️ FILTER 1: นับเฉพาะช่างที่มีตัวตนอยู่ในทีมใดๆ ณ ปัจจุบันเท่านั้น
             const validTechs = (job.selectedTechs || []).filter(tid => 
                 teams.some(t => (t.members || []).some(m => m.id === tid))
             );
-            const cnt = validTechs.length; 
+            
+            // ⚡️ FILTER 2: กรองคนที่ไม่ได้ติดสถานะ no_inc (No Incentive) เพื่อเอามาคำนวณเงิน 250
+            const payingTechs = validTechs.filter(tid => {
+                const l = leaves.find(x => x.techId === tid && x.date === job.date);
+                return !(l && l.type === 'no_inc');
+            });
 
-            // หากไม่มีช่างที่ถูกต้องเลย ยอดงานนี้จะเป็น 0 เสมอ
+            const cnt = payingTechs.length; 
+
+            // หากไม่มีช่างที่มีสิทธิ์รับเงินเลย ยอดงานนี้จะเป็น 0 บาท
             if (cnt === 0) {
                 val = 0;
             } else {
@@ -549,9 +547,10 @@ export default function App() {
             }
             job.calculatedValue = val; 
 
+            // แจกจ่ายเงินให้กับ "ทีม" ที่ส่ง payingTechs มาเท่านั้น
             if (cnt > 0) {
                 const teamsInvolved = {}; let totalTechsInJob = 0;
-                validTechs.forEach(tid => {
+                payingTechs.forEach(tid => {
                     const t = teams.find(x => (x.members||[]).some(m => m.id === tid));
                     if (t) { teamsInvolved[t.id] = (teamsInvolved[t.id] || 0) + 1; totalTechsInJob++; }
                 });
@@ -601,7 +600,13 @@ export default function App() {
                         if (leave) {
                             memberLeavesList[m.id].push({ date: day, type: leave.type });
                             const lName = LEAVE_TYPES.find(x => x.id === leave.type)?.label || 'ลา';
-                            reportTechLogs[m.id].rows.push({ isLeave: true, date: day, time: '-', type: '-', customer: `ลา (${lName})`, location: '-', rails: '-', techs: '-', note: '-', inc: '-' });
+                            
+                            // ถ้าเป็น no_inc ไม่นับเป็นวันลา แต่บันทึกเป็น Status การทำงาน
+                            if (leave.type === 'no_inc') {
+                                reportTechLogs[m.id].rows.push({ isLeave: true, date: day, time: '-', type: '-', customer: `สถานะ: ${lName}`, location: '-', rails: '-', techs: '-', note: '-', inc: '-' });
+                            } else {
+                                reportTechLogs[m.id].rows.push({ isLeave: true, date: day, time: '-', type: '-', customer: `ลา (${lName})`, location: '-', rails: '-', techs: '-', note: '-', inc: '-' });
+                            }
                         }
                     });
                 }
@@ -609,10 +614,12 @@ export default function App() {
                 const dayJobs = periodJobs.filter(j => j.date === day).sort((a,b) => (a.timeSlot||'').localeCompare(b.timeSlot||''));
                 dayJobs.forEach(job => {
                     const involvedTeams = {};
+                    
+                    // นับเฉพาะช่างที่ยังเป็นคนทำงานจริง ไม่รวมผี
                     const validTechsInJob = (job.selectedTechs || []).filter(tid => 
                         teams.some(t => (t.members || []).some(m => m.id === tid))
                     );
-                    const totalTechsInJob = validTechsInJob.length;
+                    const totalTechsInJob = validTechsInJob.length; // อันนี้คือนับหัวรวมทั้งหมดในงาน
                     
                     validTechsInJob.forEach(tid => {
                         const tMatch = teams.find(x => (x.members||[]).some(m => m.id === tid));
@@ -630,6 +637,7 @@ export default function App() {
                         const jobVal = job.calculatedValue || 0;
                         const jobRails = parseInt(job.rails) || 0;
                         
+                        // เงินของทีมได้มาจากสัดส่วนของคนที่มีสิทธิ์ (ที่ผ่านการกรองจาก filter 2 ด้านบนแล้ว)
                         const teamShareAmt = totalTechsInJob > 0 ? (jobVal * teamTechCount) / totalTechsInJob : 0;
                         const teamRailsShare = isExcluded ? 0 : (jobRails / totalTeams);
                         const typeLabel = JOB_TYPES.find(t=>t.id===job.type)?.label || job.type;
@@ -637,7 +645,10 @@ export default function App() {
 
                         reportTeamLogs[team.id].rows.push({ date: job.date, time: job.timeSlot || '-', type: typeLabel, customer: job.customer || '-', location: job.location || '-', rails: isExcluded ? '-' : Number(teamRailsShare.toFixed(2)), techs: teamTechCount, note: noteStr, inc: teamShareAmt });
 
+                        // คำนวณรายหัว
                         const activeMembers = membersList.filter(m => m.joinDate <= day && (!m.resignDate || m.resignDate > day));
+                        
+                        // คนที่มีสิทธิ์รับเงิน = ไม่ลา และไม่ได้เป็น no_inc
                         const eligibleMembers = activeMembers.filter(m => {
                             const leave = leaves.find(l => l.techId === m.id && l.date === day);
                             return !leave || leave.type === 'vacation';
@@ -648,8 +659,13 @@ export default function App() {
 
                         activeMembers.forEach(m => {
                             const isEligible = eligibleMembers.some(em => em.id === m.id);
+                            const isNoInc = leaves.find(l => l.techId === m.id && l.date === job.date)?.type === 'no_inc';
+                            
+                            let noteDisplay = noteStr;
+                            if (isNoInc) noteDisplay = noteStr ? `${noteStr} (No Incentive)` : 'No Incentive';
+
                             reportTechLogs[m.id].rows.push({
-                                date: job.date, time: job.timeSlot || '-', type: typeLabel, customer: job.customer || '-', location: job.location || '-', rails: isExcluded ? '-' : (isEligible ? Number(railsPerHead.toFixed(2)) : 0), techs: teamTechCount, note: noteStr, inc: isEligible ? sharePerHead : 0
+                                date: job.date, time: job.timeSlot || '-', type: typeLabel, customer: job.customer || '-', location: job.location || '-', rails: isExcluded ? '-' : (isEligible ? Number(railsPerHead.toFixed(2)) : 0), techs: teamTechCount, note: noteDisplay, inc: isEligible ? sharePerHead : 0
                             });
                         });
                     }
@@ -675,7 +691,13 @@ export default function App() {
                 ...team, totalEarned: teamTotalEarned, totalRails: teamTotalRails, totalMeasures: teamTotalMeasures,
                 members: membersList.map(m => ({ 
                     ...m, incentive: memberEarnings[m.id],
-                    workDays: daysInPeriod.filter(d => !holidays.includes(d) && m.joinDate <= d && (!m.resignDate || m.resignDate > d) && !leaves.find(l => l.techId === m.id && l.date === d)).length,
+                    // เปลี่ยนการเช็ค workDays ให้คนที่สถานะ no_inc (มาทำงานแต่ไม่ได้เงิน) ยังถูกนับเป็น 1 วันทำงาน
+                    workDays: daysInPeriod.filter(d => 
+                        !holidays.includes(d) && 
+                        m.joinDate <= d && 
+                        (!m.resignDate || m.resignDate > d) && 
+                        !leaves.find(l => l.techId === m.id && l.date === d && l.type !== 'no_inc')
+                    ).length,
                     leaves: memberLeavesList[m.id]
                 })) 
             };
@@ -723,7 +745,7 @@ export default function App() {
       {notification && <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-white flex items-center gap-2 ${notification.type === 'error' ? 'bg-red-500' : 'bg-green-600'} no-print`}>{notification.type === 'error' ? <AlertCircle size={20}/> : <CheckCircle size={20}/>}<span>{notification.message}</span></div>}
       {confirmModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 no-print"><div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6"><h3 className="text-lg font-bold mb-2">{confirmModal.title}</h3><p className="text-gray-600 mb-6">{confirmModal.message}</p><div className="flex gap-3 justify-end"><button onClick={()=>setConfirmModal(null)} className="px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button><button onClick={confirmModal.onConfirm} className="px-4 py-2 bg-red-600 text-white rounded-lg">ยืนยัน</button></div></div></div>}
       {showAddJobModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 no-print"><div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6"><h3 className="text-lg font-bold mb-4">เพิ่มงานใหม่</h3><div className="space-y-4"><div className="space-y-1"><label className="block text-xs font-bold text-gray-500">เลือกวันที่:</label><input type="date" className="w-full border rounded p-2 text-lg font-bold" value={newJobDate} onChange={e=>setNewJobDate(e.target.value)}/></div><div className="space-y-1"><label className="block text-xs font-bold text-gray-500">เลือกเวลา:</label><select className="w-full border rounded p-2 text-lg font-bold" value={newJobTimeSlot} onChange={e=>setNewJobTimeSlot(e.target.value)}>{TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}</select></div></div><div className="flex gap-3 justify-end mt-6"><button onClick={()=>setShowAddJobModal(false)} className="px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button><button onClick={confirmAddJob} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-4 py-2 rounded-lg hover:opacity-90">ตกลง</button></div></div></div>}
-      {activeLeaveCell && (<div ref={leaveMenuRef} className="absolute bg-white shadow-xl border rounded-lg p-1 z-[999] min-w-[120px] no-print" style={{ top: activeLeaveCell.top, left: activeLeaveCell.left }}>{LEAVE_TYPES.map(type => (<button key={type.id} onClick={() => selectLeaveType(type.id)} className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 rounded flex items-center gap-2 ${type.color.replace('bg-', 'text-')}`}><span className={`w-4 h-4 flex items-center justify-center rounded-full text-[9px] ${type.color}`}>{type.short}</span>{type.label}</button>))}<div className="h-px bg-gray-100 my-1"></div><button onClick={() => selectLeaveType('clear')} className="w-full text-left px-3 py-2 text-xs text-red-500 hover:bg-red-50 rounded">ยกเลิกวันลา</button></div>)}
+      {activeLeaveCell && (<div ref={leaveMenuRef} className="absolute bg-white shadow-xl border rounded-lg p-1 z-[999] min-w-[120px] no-print" style={{ top: activeLeaveCell.top, left: activeLeaveCell.left }}>{LEAVE_TYPES.map(type => (<button key={type.id} onClick={() => selectLeaveType(type.id)} className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 rounded flex items-center gap-2 ${type.color.replace('bg-', 'text-')}`}><span className={`w-4 h-4 flex items-center justify-center rounded-full text-[9px] ${type.color}`}>{type.short}</span>{type.label}</button>))}<div className="h-px bg-gray-100 my-1"></div><button onClick={() => selectLeaveType('clear')} className="w-full text-left px-3 py-2 text-xs text-red-500 hover:bg-red-50 rounded">ยกเลิกสถานะ</button></div>)}
 
       <div className="bg-white border-b sticky top-0 z-50 no-print">
         <div className="max-w-7xl mx-auto px-4 py-3">
@@ -779,8 +801,11 @@ export default function App() {
                        <div className="flex gap-1 flex-wrap">
                            {(t.members || []).map((m, mIdx) => {
                                const isSelected = (j.selectedTechs || []).includes(m.id);
+                               
                                const leave = leaves.find(l => l.techId === m.id && l.date === j.date);
-                               const isLeave = !!leave;
+                               const isNoInc = leave?.type === 'no_inc';
+                               const isLeave = leave && !isNoInc; // ลาแบบอื่นๆ
+
                                const isResigned = m.resignDate && j.date >= m.resignDate;
                                const isNotYetJoined = m.joinDate && j.date < m.joinDate;
                                const isDisabled = isLeave || isResigned || isNotYetJoined;
@@ -790,13 +815,13 @@ export default function App() {
                                    key={`${m.id}-${mIdx}`} 
                                    onClick={() => !isDisabled && toggleTech(j.id, m.id)} 
                                    disabled={isDisabled}
-                                   style={isSelected && !isDisabled ? {backgroundColor: themeColor, color: themeTextColor, borderColor: themeColor} : {}}
+                                   style={isSelected && !isDisabled ? (isNoInc ? {backgroundColor: '#f3e8ff', color: '#7e22ce', borderColor: '#d8b4fe'} : {backgroundColor: themeColor, color: themeTextColor, borderColor: themeColor}) : {}}
                                    className={`px-1.5 py-0.5 rounded text-[9px] border 
                                      ${!isSelected && !isDisabled ? 'bg-gray-100 text-gray-500' : ''}
                                      ${isLeave ? 'opacity-40 cursor-not-allowed bg-red-100 text-red-400 border-red-200' : ''}
                                      ${isResigned || isNotYetJoined ? 'line-through bg-gray-200 text-gray-400 cursor-not-allowed border-gray-300' : ''}
                                    `}
-                                   title={isLeave ? `ลา: ${LEAVE_TYPES.find(lt=>lt.id===leave.type)?.label}` : (isResigned ? 'ลาออก/ย้ายทีม แล้ว' : (isNotYetJoined ? 'ยังไม่เริ่มงาน' : ''))}
+                                   title={isLeave ? `ลา: ${LEAVE_TYPES.find(lt=>lt.id===leave.type)?.label}` : (isNoInc ? 'ทำงานแต่ไม่คิดเงิน (No Incentive)' : (isResigned ? 'ลาออก/ย้ายทีม แล้ว' : (isNotYetJoined ? 'ยังไม่เริ่มงาน' : '')))}
                                  >
                                    {m.name}
                                  </button>
@@ -1027,7 +1052,7 @@ export default function App() {
                                                             <td className="border p-2 text-center">{row.rails}</td>
                                                             <td className="border p-2 text-center">{row.techs}</td>
                                                             <td className="border p-2 text-center text-[10px] text-gray-500">{row.note}</td>
-                                                            <td className="border p-2 text-right">{row.inc !== '-' && row.inc > 0 ? `฿${Number(row.inc).toLocaleString()}` : (row.inc === 0 ? '฿0 (ไม่เข้าเกณฑ์)' : '-')}</td>
+                                                            <td className="border p-2 text-right">{row.inc !== '-' && row.inc > 0 ? `฿${Number(row.inc).toLocaleString()}` : (row.inc === 0 ? '฿0' : '-')}</td>
                                                           </>
                                                       )}
                                                   </tr>
