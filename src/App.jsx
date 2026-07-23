@@ -3,7 +3,7 @@ import {
   Calendar, Users, DollarSign, FileText, Plus, Trash2, Edit2, 
   ChevronDown, CheckSquare, Square, Printer, Save, RefreshCw, X, FolderPlus,
   AlertCircle, CheckCircle, Cloud, Loader2, ArrowUp, ArrowDown, Lock, LogOut, UserPlus, Shield,
-  BarChart3, PieChart, UserCog, CalendarDays, Database, FileSpreadsheet, AlertTriangle, Clock, UserMinus, Pencil, Ruler, MapPin, Key, Palette, Search, ArrowRightLeft
+  BarChart3, PieChart, UserCog, CalendarDays, Database, FileSpreadsheet, AlertTriangle, Clock, UserMinus, Pencil, Ruler, MapPin, Key, Palette, Search, ArrowRightLeft, Eraser
 } from 'lucide-react';
 
 // --- Firebase Imports ---
@@ -360,6 +360,42 @@ export default function App() {
       });
   };
 
+  const handleCleanGhostData = async () => {
+      requestConfirm('ล้างข้อมูลช่างตกค้าง', 'ระบบจะค้นหาและลบรายชื่อช่างที่ถูกลบไปแล้วแต่ยังค้างอยู่ในงาน ยืนยันหรือไม่?', async () => {
+          try {
+              const batch = writeBatch(db);
+              let cleanedCount = 0;
+              const validMemberIds = new Set();
+              
+              // เก็บ ID พนักงานปัจจุบันทั้งหมด
+              teams.forEach(t => (t.members || []).forEach(m => validMemberIds.add(m.id)));
+
+              jobs.forEach(job => {
+                  const originalTechs = job.selectedTechs || [];
+                  const validTechs = originalTechs.filter(id => validMemberIds.has(id));
+                  
+                  // ถ้าจำนวนเปลี่ยนไป แสดงว่ามี ID ผี ให้บันทึกทับด้วย ID ที่ถูกต้อง
+                  if (validTechs.length !== originalTechs.length) {
+                      const jobRef = doc(db, 'artifacts', appId, 'public', 'data', 'jobs', job.id);
+                      batch.update(jobRef, { selectedTechs: validTechs });
+                      cleanedCount++;
+                  }
+              });
+
+              if (cleanedCount > 0) {
+                  await batch.commit();
+                  showNotification(`เคลียร์รายชื่อค้างใน ${cleanedCount} งานเรียบร้อยแล้ว`, 'success');
+              } else {
+                  showNotification('ไม่พบรายชื่อช่างตกค้างในระบบ', 'success');
+              }
+              setConfirmModal(null);
+          } catch (e) {
+              handlePermissionError(e);
+              showNotification(`Error: ${e.message}`, 'error');
+          }
+      });
+  };
+
   const handleAddTeam = async () => { 
       if(!newTeamName) return;
       try { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), { name: newTeamName, members: [] }); setIsAddingTeam(false); showNotification('เพิ่มสำเร็จ'); } catch(e) { handlePermissionError(e); }
@@ -471,7 +507,7 @@ export default function App() {
     try {
         const periodJobs = jobs.filter(j => j.date >= period.start && j.date <= period.end);
         
-        // Sorting Jobs based on dropdown
+        // Sorting Jobs
         periodJobs.sort((a, b) => {
             const dateA = a.date || ''; const dateB = b.date || '';
             const timeA = a.timeSlot || ''; const timeB = b.timeSlot || '';
@@ -491,14 +527,19 @@ export default function App() {
 
         periodJobs.forEach(job => {
             let val = 0; 
-            const cnt = (job.selectedTechs || []).length; 
             const rails = parseInt(job.rails) || 0;
             const excludedTypes = ['measure', 'travel_go', 'travel_back', 'fix_free'];
             
             if (!excludedTypes.includes(job.type)) globalTotalRails += rails;
             if (job.type === 'measure') globalTotalMeasureJobs += 1;
 
-            // กฎ: ถ้าไม่ได้กดเลือกช่างเลย เงินต้องเป็น 0 บาทเสมอ (แก้บั๊กเงินโผล่ 250)
+            // ⚡️ FILTER GHOST IDs: นับเฉพาะช่างที่มีตัวตนอยู่ในทีมใดๆ ณ ปัจจุบันเท่านั้น
+            const validTechs = (job.selectedTechs || []).filter(tid => 
+                teams.some(t => (t.members || []).some(m => m.id === tid))
+            );
+            const cnt = validTechs.length; 
+
+            // หากไม่มีช่างที่ถูกต้องเลย ยอดงานนี้จะเป็น 0 เสมอ
             if (cnt === 0) {
                 val = 0;
             } else {
@@ -510,7 +551,7 @@ export default function App() {
 
             if (cnt > 0) {
                 const teamsInvolved = {}; let totalTechsInJob = 0;
-                (job.selectedTechs || []).forEach(tid => {
+                validTechs.forEach(tid => {
                     const t = teams.find(x => (x.members||[]).some(m => m.id === tid));
                     if (t) { teamsInvolved[t.id] = (teamsInvolved[t.id] || 0) + 1; totalTechsInJob++; }
                 });
@@ -568,10 +609,12 @@ export default function App() {
                 const dayJobs = periodJobs.filter(j => j.date === day).sort((a,b) => (a.timeSlot||'').localeCompare(b.timeSlot||''));
                 dayJobs.forEach(job => {
                     const involvedTeams = {};
-                    const techIds = job.selectedTechs || [];
-                    const totalTechsInJob = techIds.length;
+                    const validTechsInJob = (job.selectedTechs || []).filter(tid => 
+                        teams.some(t => (t.members || []).some(m => m.id === tid))
+                    );
+                    const totalTechsInJob = validTechsInJob.length;
                     
-                    techIds.forEach(tid => {
+                    validTechsInJob.forEach(tid => {
                         const tMatch = teams.find(x => (x.members||[]).some(m => m.id === tid));
                         if (tMatch) { if (!involvedTeams[tMatch.id]) involvedTeams[tMatch.id] = []; involvedTeams[tMatch.id].push(tid); }
                     });
@@ -649,7 +692,8 @@ export default function App() {
   const exportToCSV = () => {
       const headers = ["วันที่", "ลูกค้า", "สถานที่", "Order No", "เวลา", "ประเภทงาน", "จำนวนราง", "ทีมช่าง", "รายชื่อช่าง", "ตรวจสอบ", "ค่า Incentive"];
       const rows = calculatedData.periodJobs.map(j => {
-          const tNames = teams.flatMap(t => t.members || []).filter(m => (j.selectedTechs || []).includes(m.id)).map(m => m.name).join(", ");
+          const validTechs = (j.selectedTechs || []).filter(tid => teams.some(t => (t.members || []).some(m => m.id === tid)));
+          const tNames = teams.flatMap(t => t.members || []).filter(m => validTechs.includes(m.id)).map(m => m.name).join(", ");
           return [ j.date, `"${(j.customer||'').replace(/"/g,'""')}"`, `"${(j.location||'').replace(/"/g,'""')}"`, `"${(j.orderNo||'').replace(/"/g,'""')}"`, j.timeSlot || `${j.timeIn || ''} - ${j.timeOut || ''}`, JOB_TYPES.find(t => t.id === j.type)?.label || j.type, j.rails, `"${tNames}"`, j.isChecked ? 'ตรวจแล้ว' : 'ยังไม่ตรวจ', j.calculatedValue ].join(",");
       });
       const blob = new Blob(["\uFEFF" + [headers.join(","), ...rows].join("\n")], { type: "text/csv;charset=utf-8;" });
@@ -737,7 +781,6 @@ export default function App() {
                                const isSelected = (j.selectedTechs || []).includes(m.id);
                                const leave = leaves.find(l => l.techId === m.id && l.date === j.date);
                                const isLeave = !!leave;
-                               // เช็คว่าพนักงานคนนี้ทำงานอยู่หรือไม่ในวันที่นี้
                                const isResigned = m.resignDate && j.date >= m.resignDate;
                                const isNotYetJoined = m.joinDate && j.date < m.joinDate;
                                const isDisabled = isLeave || isResigned || isNotYetJoined;
@@ -1063,6 +1106,15 @@ export default function App() {
 
                   <div className="border-t pt-6">
                       <h4 className="font-bold text-gray-700 mb-2 flex items-center gap-2"><Database size={16}/> จัดการฐานข้อมูล</h4>
+                      
+                      <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 flex items-center justify-between mb-4">
+                          <div>
+                              <p className="text-sm font-bold text-blue-800">เคลียร์รายชื่อช่างตกค้าง (Clear Ghost Data)</p>
+                              <p className="text-xs text-blue-600 mt-1">ลบรายชื่อช่างที่ถูกลบไปแล้ว แต่ยังค้างอยู่ในประวัติงาน</p>
+                          </div>
+                          <button onClick={handleCleanGhostData} className="bg-blue-600 text-white px-4 py-2 rounded text-xs hover:bg-blue-700 transition-colors flex items-center gap-1"><Eraser size={14}/> เคลียร์ข้อมูล</button>
+                      </div>
+
                       <div className="bg-orange-50 p-4 rounded-lg border border-orange-100 flex items-center justify-between">
                           <div>
                               <p className="text-sm font-bold text-orange-800">กู้คืนข้อมูลเริ่มต้น (Reset Data)</p>
