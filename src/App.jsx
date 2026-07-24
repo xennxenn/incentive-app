@@ -6,6 +6,7 @@ import {
   BarChart3, PieChart, UserCog, CalendarDays, Database, FileSpreadsheet, AlertTriangle, Clock, UserMinus, Pencil, Ruler, MapPin, Key, Palette, Search, ArrowRightLeft
 } from 'lucide-react';
 
+// --- Firebase Imports ---
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { 
   getAuth, 
@@ -31,13 +32,14 @@ import {
 } from "firebase/firestore";
 
 // ------------------------------------------------------------------
-// 🚀 DEPLOYMENT CONFIGURATION
+// 🚀 DEPLOYMENT CONFIGURATION (Stable Version)
 // ------------------------------------------------------------------
 let app;
 let auth;
 let db;
 let firebaseError = null;
 
+// 1. Hardcoded Config
 const manualConfig = {
   apiKey: "AIzaSyCRtYrko1XhpTTCRecRqKduASdSdimi64M",
   authDomain: "incentive-employ.firebaseapp.com",
@@ -53,6 +55,7 @@ try {
   if (apps.length === 0) {
     app = initializeApp(manualConfig);
     auth = getAuth(app);
+    // ใช้ LongPolling แก้ปัญหา Timeout
     db = initializeFirestore(app, { experimentalForceLongPolling: true });
   } else {
     app = apps[0];
@@ -66,10 +69,13 @@ try {
   }
 }
 
-// APP ID ต้องใช้ตัวเดิมเพื่อให้ข้อมูลเดิมดึงกลับมา
+// 2. ใช้ App ID เดิมเป๊ะๆ เพื่อดึงข้อมูลทั้งหมดกลับมา
 const appId = 'pasaya-incentive-v6-production';
+
+// โลโก้
 const LOGO_URL = 'https://lh3.googleusercontent.com/d/1xT2ysUSWkTcFxs1ztoGxZuQcnO_c66Tu';
 
+// --- Error Boundary ---
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false }; }
   static getDerivedStateFromError(error) { return { hasError: true }; }
@@ -80,18 +86,20 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+// --- Constants ---
 const DEFAULT_SUPER_ADMIN = { username: 'T58121', password: '1234', name: 'Admin T58121', role: 'super_admin' };
 const DEFAULT_TEAMS_DATA = [
-  { name: 'ทีมช่างนาย', members: [{name: 'ช่างนาย', joinDate: '2024-01-01'}, {name: 'ช่างอาท', joinDate: '2024-01-01'}, {name: 'ช่างลิด', joinDate: '2024-01-01'}] },
-  { name: 'ทีมช่างเบนซ์', members: [{name: 'ช่างเบนซ์', joinDate: '2024-01-01'}, {name: 'ช่างกี้', joinDate: '2024-01-01'}] },
-  { name: 'ทีมช่างอั้ม', members: [{name: 'ช่างอั้ม', joinDate: '2024-01-01'}, {name: 'ช่างต้อม', joinDate: '2024-01-01'}, {name: 'ช่างทัด', joinDate: '2024-01-01'}] },
-  { name: 'ทีมตัววิ่ง', members: [{name: 'ช่างเวียร์', joinDate: '2024-01-01'}] },
+  { name: 'ทีมช่างนาย', members: [{id: 'm1', name: 'ช่างนาย', joinDate: '2024-01-01'}, {id: 'm2', name: 'ช่างอาท', joinDate: '2024-01-01'}, {id: 'm3', name: 'ช่างลิด', joinDate: '2024-01-01'}] },
+  { name: 'ทีมช่างเบนซ์', members: [{id: 'm4', name: 'ช่างเบนซ์', joinDate: '2024-01-01'}, {id: 'm5', name: 'ช่างกี้', joinDate: '2024-01-01'}] },
+  { name: 'ทีมช่างอั้ม', members: [{id: 'm6', name: 'ช่างอั้ม', joinDate: '2024-01-01'}, {id: 'm7', name: 'ช่างต้อม', joinDate: '2024-01-01'}, {id: 'm8', name: 'ช่างทัด', joinDate: '2024-01-01'}] },
+  { name: 'ทีมตัววิ่ง', members: [{id: 'm9', name: 'ช่างเวียร์', joinDate: '2024-01-01'}] },
   { name: 'ทีมวัดพื้นที่', members: [] },
 ];
 
 const JOB_TYPES = [
   { id: 'measure', label: 'วัดพื้นที่' }, { id: 'travel_go', label: 'วันเดินทางไป' }, { id: 'travel_back', label: 'วันเดินทางกลับ' }, { id: 'install', label: 'ติดตั้ง' }, { id: 'install_high', label: 'ติดตั้ง/บันไดสูง' }, { id: 'install_scaffold', label: 'ติดตั้ง/นั่งร้าน' }, { id: 'fix', label: 'แก้ไข' }, { id: 'fix_scaffold', label: 'แก้ไข/นั่งร้าน' }, { id: 'fix_free', label: 'แก้ไขซ้ำ/ไม่คิด' },
 ];
+
 const LEAVE_TYPES = [
     { id: 'sick', label: 'ลาป่วย', short: 'ป', color: 'bg-red-100 text-red-700' }, 
     { id: 'business', label: 'ลากิจ', short: 'ก', color: 'bg-yellow-100 text-yellow-700' }, 
@@ -102,8 +110,16 @@ const LEAVE_TYPES = [
 
 const TIME_SLOTS = [ "10.00 - 11.30", "10.00 - 14.30", "10.00 - 17.00", "13.00 - 14.30", "13.00 - 17.00", "15.30 - 17.00" ];
 const DEFAULT_TIME_SLOT = "10.00 - 11.30";
-const MAIN_TABS = [ {id: 'dashboard', icon: BarChart3, label: 'ภาพรวม'}, {id: 'jobs', icon: FileText, label: 'บันทึกงาน'}, {id: 'teams', icon: Users, label: 'ทีมช่าง'}, {id: 'calendar', icon: Calendar, label: 'ปฏิทิน'}, {id: 'reports', icon: FileSpreadsheet, label: 'รายงาน'} ];
 
+const MAIN_TABS = [
+  {id: 'dashboard', icon: BarChart3, label: 'ภาพรวม'},
+  {id: 'jobs', icon: FileText, label: 'บันทึกงาน'},
+  {id: 'teams', icon: Users, label: 'ทีมช่าง'},
+  {id: 'calendar', icon: Calendar, label: 'ปฏิทิน'},
+  {id: 'reports', icon: FileSpreadsheet, label: 'รายงาน'}
+];
+
+// --- Helpers ---
 const formatDate = (dateStr) => {
   if (!dateStr) return '';
   try { const [y, m, d] = dateStr.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' }); } catch (e) { return dateStr; }
@@ -137,26 +153,14 @@ const getContrastYIQ = (hexcolor) => {
     return (yiq >= 128) ? 'black' : 'white';
 };
 
-// Check if a member belongs to a specific team on a specific date based on their history
-const isMemberInTeamOnDate = (member, teamId, targetDate) => {
-    if (!member.teamHistory || member.teamHistory.length === 0) {
-        return member.currentTeamId === teamId || !member.currentTeamId; 
-    }
-    const sortedHistory = [...member.teamHistory].sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate));
-    const activeRecord = sortedHistory.find(record => record.effectiveDate <= targetDate);
-    if (activeRecord) return activeRecord.teamId === teamId;
-    const oldestRecord = sortedHistory[sortedHistory.length - 1];
-    return oldestRecord && oldestRecord.teamId === teamId;
-};
-
 export default function App() {
+  // --- State ---
   const [dbReady, setDbReady] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [permissionError, setPermissionError] = useState(false); 
   
   const [teams, setTeams] = useState([]);
-  const [allMembers, setAllMembers] = useState([]); 
   const [holidays, setHolidays] = useState([]); 
   const [leaves, setLeaves] = useState([]); 
   const [jobs, setJobs] = useState([]);
@@ -172,16 +176,17 @@ export default function App() {
   const [reportType, setReportType] = useState('team'); 
   const [selectedReportTeamId, setSelectedReportTeamId] = useState('');
   const [selectedReportTechId, setSelectedReportTechId] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [jobSortOrder, setJobSortOrder] = useState('desc'); 
   
   const [usernameInput, setUsernameInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
+
   const [newTeamName, setNewTeamName] = useState('');
   const [isAddingTeam, setIsAddingTeam] = useState(false);
   const [addingMemberTo, setAddingMemberTo] = useState(null); 
   const [newMember, setNewMember] = useState({ name: '', joinDate: '', resignDate: '' }); 
   const [showPeriodManager, setShowPeriodManager] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [jobSortOrder, setJobSortOrder] = useState('desc'); 
   
   const [newUser, setNewUser] = useState({ username: '', password: '', name: '', role: 'admin' });
   const [newPeriodName, setNewPeriodName] = useState('');
@@ -208,18 +213,69 @@ export default function App() {
       return tabs;
   }, [currentUser]);
 
+  // --- Handlers ---
   const showNotification = (message, type = 'success') => { setNotification({ message, type }); setTimeout(() => setNotification(null), 4000); };
   const requestConfirm = (title, message, onConfirm) => { setConfirmModal({ title, message, onConfirm }); };
 
   const handlePermissionError = (err) => {
       console.error("Firebase Error:", err);
-      if (err?.message?.includes("Missing or insufficient permissions") || err?.code === 'permission-denied') setPermissionError(true);
+      if (err?.message?.includes("Missing or insufficient permissions")) setPermissionError(true);
+  };
+
+  const openLeaveMenu = (e, techId, date) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      setActiveLeaveCell({ techId, date, top: rect.bottom + window.scrollY, left: Math.min(rect.left + window.scrollX, window.innerWidth - 150) });
+  };
+
+  const selectLeaveType = async (type) => {
+      if (!activeLeaveCell) return;
+      const { techId, date } = activeLeaveCell;
+      const existing = leaves.find(l => l.techId === techId && l.date === date);
+      
+      try {
+          if (type === 'clear') { 
+              if (existing) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'leaves', existing.id)); 
+          } else { 
+              if (existing) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'leaves', existing.id), { type }); 
+              else await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'leaves'), { techId, date, type }); 
+
+              // เฉพาะเวลาลา (ที่ไม่ใช่ No Incentive) จะดึงชื่อออกจากงาน
+              if (type !== 'no_inc') {
+                  const jobsOnDate = jobs.filter(j => j.date === date);
+                  let removedCount = 0;
+                  for (const job of jobsOnDate) {
+                      if ((job.selectedTechs || []).includes(techId)) {
+                          const newSelection = job.selectedTechs.filter(id => id !== techId);
+                          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', job.id), { selectedTechs: newSelection });
+                          removedCount++;
+                      }
+                  }
+                  if (removedCount > 0) showNotification(`บันทึกวันลาและนำชื่อออกจาก ${removedCount} งานในวันนี้แล้ว`, 'warning');
+                  else showNotification('บันทึกสำเร็จ');
+              } else {
+                  showNotification('ตั้งค่าสถานะ No Incentive สำเร็จ');
+              }
+          }
+      } catch (err) { handlePermissionError(err); showNotification(`Error: ${err.message}`, 'error'); }
+      setActiveLeaveCell(null);
+  };
+
+  const handleAddHoliday = async (d) => {
+      const ref = doc(db, 'artifacts', appId, 'public', 'data', 'holidays', d);
+      try {
+        if(holidays.includes(d)) await deleteDoc(ref);
+        else await setDoc(ref, { date: d });
+      } catch (err) { handlePermissionError(err); showNotification(`Error: ${err.message}`, 'error'); }
   };
 
   useEffect(() => {
     const setFavicon = (url) => {
       let link = document.querySelector("link[rel~='icon']");
-      if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.getElementsByTagName('head')[0].appendChild(link); }
+      if (!link) {
+        link = document.createElement('link');
+        link.rel = 'icon';
+        document.getElementsByTagName('head')[0].appendChild(link);
+      }
       link.href = url;
     };
     setFavicon(LOGO_URL);
@@ -228,7 +284,7 @@ export default function App() {
   useEffect(() => {
     if (!auth) return;
     const initAuth = async () => { 
-        try { await signInAnonymously(auth); } catch (err) { firebaseError = `Auth Failed: ${err.message}`; }
+        try { await signInAnonymously(auth); } catch (err) { console.error("Auth Error", err); firebaseError = `Auth Failed: ${err.message}`; }
     };
     initAuth();
     const unsubscribe = onAuthStateChanged(auth, (u) => { 
@@ -241,7 +297,7 @@ export default function App() {
     if (!dbReady || !db) return;
     try {
         const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'app_users');
-        const unsub = onSnapshot(colRef, (snap) => setAppUsers(snap.docs.map(d => ({ id: d.id, ...d.data() }))), handlePermissionError);
+        const unsub = onSnapshot(colRef, async (snap) => { setAppUsers(snap.docs.map(d => ({ id: d.id, ...d.data() }))); }, handlePermissionError);
         const unsubSettings = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'theme'), (docSnap) => { 
             if(docSnap.exists() && docSnap.data().color) setThemeColor(docSnap.data().color); 
         }, handlePermissionError);
@@ -249,26 +305,30 @@ export default function App() {
     } catch (e) {}
   }, [dbReady]);
 
-  // COMPLETE SUBSCRIPTION BLOCK สำหรับโครงสร้าง All Members
+  // ซิงก์ข้อมูลหลัก (Data Subscription)
   useEffect(() => {
     if (!dbReady || !currentUser || !db) { setLoading(false); return; }
     try {
         const unsubTeams = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), async (snap) => {
-              const list = snap.docs.map(d => ({ ...d.data(), id: d.id })); setTeams(list);
+              const list = snap.docs.map(d => ({ id: d.id, ...d.data() })); 
+              setTeams(list);
+              
+              // Seed data เฉพาะเมื่อไม่มีอะไรเลย
+              if (list.length === 0) {
+                 const check = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'teams'));
+                 if (check.empty) { 
+                     try {
+                        DEFAULT_TEAMS_DATA.forEach(async (t) => await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), t)); 
+                     } catch(e) {}
+                 }
+              }
         }, handlePermissionError);
 
-        const unsubMembers = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'members'), async (snap) => {
-              const list = snap.docs.map(d => ({ ...d.data(), id: d.id })); setAllMembers(list);
-        }, handlePermissionError);
-
-        const unsubJobs = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'jobs'), (s) => setJobs(s.docs.map(d => ({ ...d.data(), id: d.id }))), handlePermissionError);
-        
-        const unsubLeaves = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'leaves'), (s) => setLeaves(s.docs.map(d => ({ ...d.data(), id: d.id }))), handlePermissionError);
-        
+        const unsubJobs = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'jobs'), (s) => setJobs(s.docs.map(d => ({ id: d.id, ...d.data() }))), handlePermissionError);
+        const unsubLeaves = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'leaves'), (s) => setLeaves(s.docs.map(d => ({ id: d.id, ...d.data() }))), handlePermissionError);
         const unsubHols = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'holidays'), (s) => setHolidays(s.docs.map(d => d.data().date)), handlePermissionError);
-        const unsubPeriods = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'savedPeriods'), (s) => { setSavedPeriods(s.docs.map(d => ({ ...d.data(), id: d.id }))); setLoading(false); }, handlePermissionError);
-        
-        return () => { unsubTeams(); unsubMembers(); unsubJobs(); unsubLeaves(); unsubHols(); unsubPeriods(); };
+        const unsubPeriods = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'savedPeriods'), (s) => { setSavedPeriods(s.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false); }, handlePermissionError);
+        return () => { unsubTeams(); unsubJobs(); unsubLeaves(); unsubHols(); unsubPeriods(); };
     } catch (e) {}
   }, [dbReady, currentUser]);
 
@@ -312,51 +372,6 @@ export default function App() {
 
   const handleLogout = () => { setCurrentUser(null); localStorage.removeItem('pasaya_app_user'); };
 
-  const openLeaveMenu = (e, techId, date) => {
-      const rect = e.currentTarget.getBoundingClientRect();
-      setActiveLeaveCell({ techId, date, top: rect.bottom + window.scrollY, left: Math.min(rect.left + window.scrollX, window.innerWidth - 150) });
-  };
-
-  const selectLeaveType = async (type) => {
-      if (!activeLeaveCell) return;
-      const { techId, date } = activeLeaveCell;
-      const existing = leaves.find(l => l.techId === techId && l.date === date);
-      
-      try {
-          if (type === 'clear') { 
-              if (existing) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'leaves', existing.id)); 
-          } else { 
-              if (existing) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'leaves', existing.id), { type }); 
-              else await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'leaves'), { techId, date, type }); 
-
-              if (type !== 'no_inc') {
-                  const jobsOnDate = jobs.filter(j => j.date === date);
-                  let removedCount = 0;
-                  for (const job of jobsOnDate) {
-                      if ((job.selectedTechs || []).includes(techId)) {
-                          const newSelection = job.selectedTechs.filter(id => id !== techId);
-                          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', job.id), { selectedTechs: newSelection });
-                          removedCount++;
-                      }
-                  }
-                  if (removedCount > 0) showNotification(`บันทึกวันลาและนำชื่อออกจาก ${removedCount} งานในวันนี้แล้ว`, 'warning');
-                  else showNotification('บันทึกสำเร็จ');
-              } else {
-                  showNotification('ตั้งค่าสถานะ No Incentive สำเร็จ');
-              }
-          }
-      } catch (err) { handlePermissionError(err); showNotification(`Error: ${err.message}`, 'error'); }
-      setActiveLeaveCell(null);
-  };
-
-  const handleAddHoliday = async (d) => {
-      const ref = doc(db, 'artifacts', appId, 'public', 'data', 'holidays', d);
-      try {
-        if(holidays.includes(d)) await deleteDoc(ref);
-        else await setDoc(ref, { date: d });
-      } catch (err) { handlePermissionError(err); showNotification(`Error: ${err.message}`, 'error'); }
-  };
-
   const handleAddAppUser = async () => {
       if (!newUser.username || !newUser.password) return showNotification('กรุณากรอกข้อมูล', 'error');
       if (appUsers.some(u => u.username === newUser.username)) return showNotification('Username ซ้ำ', 'error');
@@ -375,7 +390,9 @@ export default function App() {
           try {
               const batch = writeBatch(db);
               let cleanedCount = 0;
-              const validMemberIds = new Set(allMembers.map(m => m.id));
+              const validMemberIds = new Set();
+              
+              teams.forEach(t => (t.members || []).forEach(m => validMemberIds.add(m.id)));
 
               jobs.forEach(job => {
                   const originalTechs = job.selectedTechs || [];
@@ -400,116 +417,75 @@ export default function App() {
   };
 
   const handleSeedData = async () => { 
-      requestConfirm('กู้คืนข้อมูลเริ่มต้น (V7)', 'ยืนยันการล้างข้อมูลทีมและช่างทั้งหมดเพื่อเริ่มใหม่?', async () => { 
+      requestConfirm('กู้คืนข้อมูล', 'คำเตือน: นี่คือการล้างข้อมูลทีมที่มีอยู่ทั้งหมดแล้วกู้คืนทีมเริ่มต้น ยืนยันหรือไม่?', async () => { 
           try {
-              const membersSnap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'members'));
               const batch = writeBatch(db); 
-              membersSnap.forEach(d => batch.delete(d.ref));
-              
-              const teamsSnap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'teams'));
-              teamsSnap.forEach(d => batch.delete(d.ref));
-              
+              teams.forEach(t => batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'teams', t.id))); 
               await batch.commit(); 
-
-              for (const teamData of DEFAULT_TEAMS_DATA) {
-                  const teamRef = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), { name: teamData.name, createdAt: new Date().toISOString() });
-                  
-                  for (const m of teamData.members) {
-                      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'members'), {
-                          name: m.name,
-                          joinDate: m.joinDate,
-                          resignDate: '',
-                          currentTeamId: teamRef.id,
-                          teamHistory: [{ teamId: teamRef.id, effectiveDate: m.joinDate }],
-                          createdAt: new Date().toISOString()
-                      });
-                  }
-              }
-              setConfirmModal(null); 
-              showNotification('กู้คืนข้อมูลสำเร็จ ระบบจะแสดงข้อมูลใหม่ในสักครู่');
-          } catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
+              for (const t of DEFAULT_TEAMS_DATA) await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), t); 
+              setConfirmModal(null); showNotification('กู้คืนสำเร็จ');
+          } catch(e) { handlePermissionError(e); }
       }); 
   };
 
   const handleAddTeam = async () => { 
       if(!newTeamName) return;
-      try { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), { name: newTeamName, createdAt: new Date().toISOString() }); setIsAddingTeam(false); showNotification('เพิ่มสำเร็จ'); } catch(e) { handlePermissionError(e); }
+      try { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), { name: newTeamName, members: [] }); setIsAddingTeam(false); showNotification('เพิ่มสำเร็จ'); } catch(e) { handlePermissionError(e); }
   };
 
   const handleDeleteTeam = (id) => requestConfirm('ลบทีม', 'ยืนยัน?', async () => { 
       try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', id)); setConfirmModal(null); } catch(e) { handlePermissionError(e); }
   });
 
-  const handleAddMember = async (teamId) => { 
-      if(newMember.name) { 
+  const handleAddMember = async (tid) => { 
+      const t = teams.find(x => x.id === tid); 
+      if(t && newMember.name) { 
           try {
-              const memberData = {
-                  name: newMember.name,
-                  joinDate: newMember.joinDate || new Date().toISOString().split('T')[0],
-                  resignDate: newMember.resignDate || '',
-                  currentTeamId: teamId,
-                  teamHistory: [ { teamId: teamId, effectiveDate: newMember.joinDate || new Date().toISOString().split('T')[0] } ],
-                  createdAt: new Date().toISOString()
-              };
-              await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'members'), memberData); 
-              setAddingMemberTo(null); setNewMember({ name: '', joinDate: '', resignDate: '' }); showNotification('เพิ่มช่างสำเร็จ');
+              const upd = [...(t.members||[]), { id: `m${Date.now()}`, ...newMember }]; 
+              await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', tid), { members: upd }); 
+              setAddingMemberTo(null); setNewMember({ name: '', joinDate: '', resignDate: '' }); showNotification('เพิ่มสมาชิกสำเร็จ');
           } catch(e) { handlePermissionError(e); }
       } 
   };
   
   const handleUpdateMember = async () => {
       if (!editingMember) return;
-      try {
-          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'members', editingMember.id), {
-              name: editingMember.name,
-              joinDate: editingMember.joinDate,
-              resignDate: editingMember.resignDate
-          });
-          setEditingMember(null); showNotification('อัปเดตข้อมูลช่างสำเร็จ');
-      } catch(e) { handlePermissionError(e); }
+      const { teamId, memberId, data } = editingMember;
+      const team = teams.find(t => t.id === teamId);
+      if (team) {
+          try {
+              const updatedMembers = team.members.map(m => m.id === memberId ? { ...m, ...data } : m);
+              await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', teamId), { members: updatedMembers });
+              setEditingMember(null); showNotification('อัปเดตสำเร็จ');
+          } catch(e) { handlePermissionError(e); }
+      }
   };
   
-  const handleDeleteMember = (memberId) => requestConfirm('ลบช่าง', 'ยืนยันลบช่างคนนี้ออกจากระบบถาวร?', async () => { 
-      try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'members', memberId)); setConfirmModal(null); showNotification('ลบช่างสำเร็จ'); } catch(e) { handlePermissionError(e); }
+  const handleDeleteMember = (tid, mid) => requestConfirm('ลบสมาชิก', 'ยืนยัน?', async () => { 
+      const t = teams.find(x => x.id === tid); 
+      try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', tid), { members: t.members.filter(m => m.id !== mid) }); setConfirmModal(null); showNotification('ลบสำเร็จ'); } catch(e) { handlePermissionError(e); }
   });
 
   const handleConfirmTransfer = async () => {
-      if (!transferringMember || !transferringMember.targetTeamId || !transferringMember.date) return;
-      const member = allMembers.find(m => m.id === transferringMember.member.id);
-      if (!member) return;
+      const { teamId, member, targetTeamId, date } = transferringMember;
+      if (!targetTeamId || !date) return showNotification('กรุณาเลือกทีมปลายทางและวันที่', 'error');
 
-      try {
-          const newHistory = [...(member.teamHistory || [])];
-          newHistory.push({
-              teamId: transferringMember.targetTeamId,
-              effectiveDate: transferringMember.date
-          });
-          
-          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'members', member.id), {
-              currentTeamId: transferringMember.targetTeamId,
-              teamHistory: newHistory
-          });
-          
-          setTransferringMember(null);
-          showNotification('ย้ายทีมสำเร็จ (มีผลตามวันที่กำหนด)');
-      } catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
-  };
+      const sourceTeam = teams.find(t => t.id === teamId);
+      const targetTeam = teams.find(t => t.id === targetTeamId);
 
-  const removeMigrationHistory = async (memberId, historyIndex) => {
-      const member = allMembers.find(m => m.id === memberId);
-      if (!member || !member.teamHistory || member.teamHistory.length <= 1) {
-          showNotification('ต้องมีประวัติอย่างน้อย 1 รายการเสมอ', 'error'); return;
+      if (sourceTeam && targetTeam) {
+          try {
+              const updatedSourceMembers = sourceTeam.members.map(m => m.id === member.id ? { ...m, resignDate: date } : m);
+              const newMemberRecord = { id: `m${Date.now()}`, name: member.name, joinDate: date, resignDate: '' };
+              const updatedTargetMembers = [...(targetTeam.members || []), newMemberRecord];
+
+              await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', teamId), { members: updatedSourceMembers });
+              await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', targetTeamId), { members: updatedTargetMembers });
+              
+              setTransferringMember(null);
+              showNotification('ย้ายทีมสำเร็จ ระบบจะแบ่งยอดตามช่วงเวลาอัตโนมัติ');
+          } catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
       }
-      try {
-          const newHistory = [...member.teamHistory];
-          newHistory.splice(historyIndex, 1);
-          const sorted = [...newHistory].sort((a,b) => b.effectiveDate.localeCompare(a.effectiveDate));
-          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'members', memberId), {
-              currentTeamId: sorted[0].teamId,
-              teamHistory: newHistory
-          });
-          showNotification('ลบประวัติการย้ายทีมสำเร็จ');
-      } catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
   };
   
   const initiateAddJob = () => { 
@@ -550,6 +526,7 @@ export default function App() {
   const handleDeletePeriod = (id) => { setShowPeriodManager(false); requestConfirm('ลบรอบบันทึก', 'ยืนยันการลบ?', async () => { try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'savedPeriods', id)); setConfirmModal(null); showNotification('ลบสำเร็จ'); } catch(e) {} }); };
   const handleUpdatePeriod = async () => { if (!editingPeriod || !editingPeriod.name) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'savedPeriods', editingPeriod.id), { name: editingPeriod.name, start: editingPeriod.start, end: editingPeriod.end }); setEditingPeriod(null); showNotification('อัปเดตสำเร็จ'); } catch(e) {} };
 
+  // --- CALCULATION LOGIC (Single Source of Truth) ---
   const calculatedData = useMemo(() => {
     try {
         const periodJobs = jobs.filter(j => j.date >= period.start && j.date <= period.end);
@@ -579,23 +556,12 @@ export default function App() {
             if (!excludedTypes.includes(job.type)) globalTotalRails += rails;
             if (job.type === 'measure') globalTotalMeasureJobs += 1;
 
-            // ⚡️ FILTER 1: นับเฉพาะช่างที่มีตัวตนในปัจจุบัน และมีสิทธิ์ในวันนั้น (ยังไม่ลาออกและมีทีมอยู่)
-            const validTechs = (job.selectedTechs || []).filter(tid => {
-                const member = allMembers.find(m => m.id === tid);
-                if (!member) return false;
-                // ถ้าลาออกไปแล้ว (ก่อนหรือในวันที่ทำงาน) จะไม่นำมาคิดเงิน
-                if (member.resignDate && member.resignDate <= job.date) return false;
-                // ถ้ายังไม่เริ่มงาน จะไม่นำมาคิดเงิน
-                if (member.joinDate && member.joinDate > job.date) return false;
-                
-                // ต้องมีทีมสังกัดที่ถูกต้องในวันนั้น
-                const t = teams.find(x => isMemberInTeamOnDate(member, x.id, job.date));
-                if (!t) return false;
-                
-                return true;
-            });
+            // กรอง 1: นับเฉพาะช่างที่มีตัวตนจริงๆ ไม่โดนลบ
+            const validTechs = (job.selectedTechs || []).filter(tid => 
+                teams.some(t => (t.members || []).some(m => m.id === tid))
+            );
             
-            // ⚡️ FILTER 2: กรองคนที่ไม่ได้ติดสถานะ no_inc (No Incentive)
+            // กรอง 2: เอาคนที่ติดสถานะ No Incentive ออกไป ไม่ให้เอามาคูณเงิน
             const payingTechs = validTechs.filter(tid => {
                 const l = leaves.find(x => x.techId === tid && x.date === job.date);
                 return !(l && l.type === 'no_inc');
@@ -603,8 +569,9 @@ export default function App() {
 
             const cnt = payingTechs.length; 
 
+            // หากไม่มีใครเลย ยอดบังคับเป็น 0
             if (cnt === 0) {
-                val = 0; // Fixes the Ghost 250 bug
+                val = 0;
             } else {
                 if (job.type === 'measure') val = 250 * cnt;
                 else if (['travel_go', 'travel_back', 'fix_free'].includes(job.type)) val = 0;
@@ -615,11 +582,8 @@ export default function App() {
             if (cnt > 0) {
                 const teamsInvolved = {}; let totalTechsInJob = 0;
                 payingTechs.forEach(tid => {
-                    const member = allMembers.find(m => m.id === tid);
-                    if(member){
-                        const t = teams.find(x => isMemberInTeamOnDate(member, x.id, job.date));
-                        if (t) { teamsInvolved[t.id] = (teamsInvolved[t.id] || 0) + 1; totalTechsInJob++; }
-                    }
+                    const t = teams.find(x => (x.members||[]).some(m => m.id === tid));
+                    if (t) { teamsInvolved[t.id] = (teamsInvolved[t.id] || 0) + 1; totalTechsInJob++; }
                 });
                 
                 const date = job.date;
@@ -642,83 +606,53 @@ export default function App() {
         const periodWorkingDays = daysInPeriod.filter(d => !holidays.includes(d)).length;
         
         const reportTeamLogs = {}; const reportTechLogs = {};
-        teams.forEach(t => { reportTeamLogs[t.id] = { name: t.name, rows: [] }; });
-        allMembers.forEach(m => { reportTechLogs[m.id] = { name: m.name, teamName: teams.find(t=>t.id===m.currentTeamId)?.name || '-', rows: [] }; });
-
-        const teamStatsMap = {};
-        teams.forEach(t => teamStatsMap[t.id] = { ...t, totalEarned: 0, totalRails: 0, totalMeasures: 0, membersMap: {} });
-        allMembers.forEach(m => {
-            const fallbackTeam = m.currentTeamId || teams[0]?.id;
-            if (teamStatsMap[fallbackTeam]) {
-                teamStatsMap[fallbackTeam].membersMap[m.id] = { ...m, incentive: 0, workDays: 0, leaves: [] };
-            }
+        teams.forEach(t => {
+            reportTeamLogs[t.id] = { name: t.name, rows: [] };
+            (t.members || []).forEach(m => { reportTechLogs[m.id] = { name: m.name, teamName: t.name, rows: [] }; });
         });
-        
-        const memberEarnings = {};
-        allMembers.forEach(m => memberEarnings[m.id] = 0);
 
-        daysInPeriod.forEach(day => {
-            const isHol = holidays.includes(day);
-            const dayTeamMembers = {};
-            teams.forEach(t => dayTeamMembers[t.id] = []);
-
-            allMembers.forEach(m => {
-                const activeTeam = teams.find(t => isMemberInTeamOnDate(m, t.id, day));
-                if (activeTeam) { dayTeamMembers[activeTeam.id].push(m); }
-                
-                if (!isHol) {
-                    const leave = leaves.find(l => l.techId === m.id && l.date === day);
-                    if (leave) {
-                        const currentTeamStat = teamStatsMap[activeTeam?.id || m.currentTeamId];
-                        if (currentTeamStat && currentTeamStat.membersMap[m.id]) {
-                            currentTeamStat.membersMap[m.id].leaves.push({ date: day, type: leave.type });
-                        }
-                        const lName = LEAVE_TYPES.find(x => x.id === leave.type)?.label || 'ลา';
-                        if (leave.type === 'no_inc') {
-                            reportTechLogs[m.id].rows.push({ isLeave: true, date: day, time: '-', type: '-', customer: `สถานะ: ${lName}`, location: '-', rails: '-', techs: '-', note: '-', inc: '-', effectiveTeamName: activeTeam?.name || '-' });
-                        } else {
-                            reportTechLogs[m.id].rows.push({ isLeave: true, date: day, time: '-', type: '-', customer: `ลา (${lName})`, location: '-', rails: '-', techs: '-', note: '-', inc: '-', effectiveTeamName: activeTeam?.name || '-' });
-                        }
-                    } else {
-                        if (m.joinDate <= day && (!m.resignDate || m.resignDate > day)) {
-                             const currentTeamStat = teamStatsMap[activeTeam?.id || m.currentTeamId];
-                             if (currentTeamStat && currentTeamStat.membersMap[m.id]) {
-                                 currentTeamStat.membersMap[m.id].workDays++;
-                             }
-                        }
-                    }
-                }
-            });
-
-            teams.forEach(team => {
-                const membersList = dayTeamMembers[team.id] || [];
+        const teamStats = teams.map(team => {
+            const membersList = team.members || [];
+            const memberEarnings = {}; const memberLeavesList = {};
+            membersList.forEach(m => { memberEarnings[m.id] = 0; memberLeavesList[m.id] = []; });
+            
+            let teamTotalEarned = 0; let teamTotalRails = 0; let teamTotalMeasures = 0;
+            
+            daysInPeriod.forEach(day => {
                 const dayStats = dailyTeamIncentive[day]?.[team.id];
+                const isHol = holidays.includes(day);
 
                 if (isHol) {
                     reportTeamLogs[team.id].rows.push({ isHoliday: true, date: day, time: '-', type: '-', customer: 'วันหยุดบริษัท', location: '-', rails: '-', techs: '-', note: '-', inc: '-' });
-                    membersList.forEach(m => { reportTechLogs[m.id].rows.push({ isHoliday: true, date: day, time: '-', type: '-', customer: 'วันหยุดบริษัท', location: '-', rails: '-', techs: '-', note: '-', inc: '-', effectiveTeamName: team.name }); });
+                    membersList.forEach(m => { reportTechLogs[m.id].rows.push({ isHoliday: true, date: day, time: '-', type: '-', customer: 'วันหยุดบริษัท', location: '-', rails: '-', techs: '-', note: '-', inc: '-' }); });
+                } else {
+                    membersList.forEach(m => {
+                        const leave = leaves.find(l => l.techId === m.id && l.date === day);
+                        if (leave) {
+                            memberLeavesList[m.id].push({ date: day, type: leave.type });
+                            const lName = LEAVE_TYPES.find(x => x.id === leave.type)?.label || 'ลา';
+                            
+                            // ถ้าสถานะ No Incentive
+                            if (leave.type === 'no_inc') {
+                                reportTechLogs[m.id].rows.push({ isLeave: true, date: day, time: '-', type: '-', customer: `สถานะ: ${lName}`, location: '-', rails: '-', techs: '-', note: '-', inc: '-' });
+                            } else {
+                                reportTechLogs[m.id].rows.push({ isLeave: true, date: day, time: '-', type: '-', customer: `ลา (${lName})`, location: '-', rails: '-', techs: '-', note: '-', inc: '-' });
+                            }
+                        }
+                    });
                 }
 
                 const dayJobs = periodJobs.filter(j => j.date === day).sort((a,b) => (a.timeSlot||'').localeCompare(b.timeSlot||''));
                 dayJobs.forEach(job => {
                     const involvedTeams = {};
-                    
-                    const validTechsInJob = (job.selectedTechs || []).filter(tid => {
-                        const member = allMembers.find(x => x.id === tid);
-                        if(!member) return false;
-                        if (member.resignDate && member.resignDate <= job.date) return false;
-                        if (member.joinDate && member.joinDate > job.date) return false;
-                        return true;
-                    });
-                    
-                    const totalTechsInJob = validTechsInJob.length; 
+                    const validTechsInJob = (job.selectedTechs || []).filter(tid => 
+                        teams.some(t => (t.members || []).some(m => m.id === tid))
+                    );
+                    const totalTechsInJob = validTechsInJob.length;
                     
                     validTechsInJob.forEach(tid => {
-                        const member = allMembers.find(x => x.id === tid);
-                        if(member){
-                            const tMatch = teams.find(x => isMemberInTeamOnDate(member, x.id, day));
-                            if (tMatch) { if (!involvedTeams[tMatch.id]) involvedTeams[tMatch.id] = []; involvedTeams[tMatch.id].push(tid); }
-                        }
+                        const tMatch = teams.find(x => (x.members||[]).some(m => m.id === tid));
+                        if (tMatch) { if (!involvedTeams[tMatch.id]) involvedTeams[tMatch.id] = []; involvedTeams[tMatch.id].push(tid); }
                     });
 
                     const totalTeams = Object.keys(involvedTeams).length;
@@ -740,7 +674,6 @@ export default function App() {
                         reportTeamLogs[team.id].rows.push({ date: job.date, time: job.timeSlot || '-', type: typeLabel, customer: job.customer || '-', location: job.location || '-', rails: isExcluded ? '-' : Number(teamRailsShare.toFixed(2)), techs: teamTechCount, note: noteStr, inc: teamShareAmt });
 
                         const activeMembers = membersList.filter(m => m.joinDate <= day && (!m.resignDate || m.resignDate > day));
-                        
                         const eligibleMembers = activeMembers.filter(m => {
                             const leave = leaves.find(l => l.techId === m.id && l.date === day);
                             return !leave || leave.type === 'vacation';
@@ -757,17 +690,17 @@ export default function App() {
                             if (isNoInc) noteDisplay = noteStr ? `${noteStr} (No Incentive)` : 'No Incentive';
 
                             reportTechLogs[m.id].rows.push({
-                                date: job.date, time: job.timeSlot || '-', type: typeLabel, customer: job.customer || '-', location: job.location || '-', rails: isExcluded ? '-' : (isEligible ? Number(railsPerHead.toFixed(2)) : 0), techs: teamTechCount, note: noteDisplay, inc: isEligible ? sharePerHead : 0, effectiveTeamName: team.name
+                                date: job.date, time: job.timeSlot || '-', type: typeLabel, customer: job.customer || '-', location: job.location || '-', rails: isExcluded ? '-' : (isEligible ? Number(railsPerHead.toFixed(2)) : 0), techs: teamTechCount, note: noteDisplay, inc: isEligible ? sharePerHead : 0
                             });
                         });
                     }
                 });
 
                 if (dayStats) { 
-                    teamStatsMap[team.id].totalRails += dayStats.rails; teamStatsMap[team.id].totalMeasures += dayStats.measures; 
+                    teamTotalRails += dayStats.rails; teamTotalMeasures += dayStats.measures; 
                     const dailyPot = dayStats.amount || 0;
                     if (dailyPot > 0) {
-                        teamStatsMap[team.id].totalEarned += dailyPot;
+                        teamTotalEarned += dailyPot;
                         const activeMembers = membersList.filter(m => m.joinDate <= day && (!m.resignDate || m.resignDate > day));
                         const eligibleMembers = activeMembers.filter(m => {
                             const leave = leaves.find(l => l.techId === m.id && l.date === day);
@@ -778,47 +711,35 @@ export default function App() {
                     }
                 }
             });
-        });
 
-        let exactTotalIncentive = 0;
-        const teamStats = teams.map(t => {
-            exactTotalIncentive += teamStatsMap[t.id].totalEarned;
-            return {
-                ...t,
-                totalEarned: teamStatsMap[t.id].totalEarned,
-                totalRails: teamStatsMap[t.id].totalRails,
-                totalMeasures: teamStatsMap[t.id].totalMeasures,
-                members: Object.values(teamStatsMap[t.id].membersMap).map(m => ({
-                    ...m,
-                    incentive: memberEarnings[m.id] || 0
-                }))
+            return { 
+                ...team, totalEarned: teamTotalEarned, totalRails: teamTotalRails, totalMeasures: teamTotalMeasures,
+                members: membersList.map(m => ({ 
+                    ...m, incentive: memberEarnings[m.id],
+                    workDays: daysInPeriod.filter(d => 
+                        !holidays.includes(d) && 
+                        m.joinDate <= d && 
+                        (!m.resignDate || m.resignDate > d) && 
+                        !leaves.find(l => l.techId === m.id && l.date === d && l.type !== 'no_inc')
+                    ).length,
+                    leaves: memberLeavesList[m.id]
+                })) 
             };
         });
-
-        const individualStats = allMembers.map(m => {
-            const currentTeamName = teams.find(t => t.id === m.currentTeamId)?.name || 'ไม่มีทีม';
-            const workDays = teamStatsMap[m.currentTeamId]?.membersMap[m.id]?.workDays || 0;
-            return {
-                ...m,
-                teamName: currentTeamName,
-                workDays: workDays,
-                incentive: memberEarnings[m.id] || 0
-            }
-        }).sort((a,b) => b.incentive - a.incentive);
-
-        const totalTechs = allMembers.filter(m => m.joinDate <= period.end && (!m.resignDate || m.resignDate > period.start)).length;
+        
+        const exactTotalIncentive = teamStats.reduce((sum, t) => sum + t.totalEarned, 0);
+        const individualStats = teamStats.flatMap(t => (t.members || []).map(m => ({...m, teamName: t.name}))).sort((a,b) => b.incentive - a.incentive);
+        const totalTechs = teamStats.reduce((acc, t) => acc + (t.members || []).length, 0);
 
         return { periodJobs, totalIncentive: Math.round(exactTotalIncentive), teamStats, individualStats, totalTechs, periodWorkingDays, totalRails: globalTotalRails, totalMeasureJobs: globalTotalMeasureJobs, reportTeamLogs, reportTechLogs };
     } catch (e) { return { periodJobs: [], totalIncentive: 0, teamStats: [], individualStats: [], totalTechs: 0, periodWorkingDays: 0, totalRails: 0, totalMeasureJobs: 0, reportTeamLogs: {}, reportTechLogs: {} }; }
-  }, [jobs, teams, allMembers, holidays, leaves, period, jobSortOrder]);
+  }, [jobs, teams, holidays, leaves, period, jobSortOrder]);
 
   const exportToCSV = () => {
       const headers = ["วันที่", "ลูกค้า", "สถานที่", "Order No", "เวลา", "ประเภทงาน", "จำนวนราง", "ทีมช่าง", "รายชื่อช่าง", "ตรวจสอบ", "ค่า Incentive"];
       const rows = calculatedData.periodJobs.map(j => {
-          const tNames = allMembers.filter(m => (j.selectedTechs || []).includes(m.id)).map(m => {
-              const activeTeam = teams.find(t => isMemberInTeamOnDate(m, t.id, j.date));
-              return `${m.name} (${activeTeam ? activeTeam.name : 'Unknown'})`;
-          }).join(", ");
+          const validTechs = (j.selectedTechs || []).filter(tid => teams.some(t => (t.members || []).some(m => m.id === tid)));
+          const tNames = teams.flatMap(t => t.members || []).filter(m => validTechs.includes(m.id)).map(m => m.name).join(", ");
           return [ j.date, `"${(j.customer||'').replace(/"/g,'""')}"`, `"${(j.location||'').replace(/"/g,'""')}"`, `"${(j.orderNo||'').replace(/"/g,'""')}"`, j.timeSlot || `${j.timeIn || ''} - ${j.timeOut || ''}`, JOB_TYPES.find(t => t.id === j.type)?.label || j.type, j.rails, `"${tNames}"`, j.isChecked ? 'ตรวจแล้ว' : 'ยังไม่ตรวจ', j.calculatedValue ].join(",");
       });
       const blob = new Blob(["\uFEFF" + [headers.join(","), ...rows].join("\n")], { type: "text/csv;charset=utf-8;" });
@@ -840,6 +761,7 @@ export default function App() {
       </div>
   );
 
+  // ⚡️ PRINT STYLES FIXED
   const printStyles = `
   @media print { 
       @page { size: A4; margin: 1cm; } 
@@ -863,7 +785,7 @@ export default function App() {
       {notification && <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-white flex items-center gap-2 ${notification.type === 'error' ? 'bg-red-500' : 'bg-green-600'} no-print`}>{notification.type === 'error' ? <AlertCircle size={20}/> : <CheckCircle size={20}/>}<span>{notification.message}</span></div>}
       {confirmModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 no-print"><div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6"><h3 className="text-lg font-bold mb-2">{confirmModal.title}</h3><p className="text-gray-600 mb-6">{confirmModal.message}</p><div className="flex gap-3 justify-end"><button onClick={()=>setConfirmModal(null)} className="px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button><button onClick={confirmModal.onConfirm} className="px-4 py-2 bg-red-600 text-white rounded-lg">ยืนยัน</button></div></div></div>}
       {showAddJobModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 no-print"><div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6"><h3 className="text-lg font-bold mb-4">เพิ่มงานใหม่</h3><div className="space-y-4"><div className="space-y-1"><label className="block text-xs font-bold text-gray-500">เลือกวันที่:</label><input type="date" className="w-full border rounded p-2 text-lg font-bold" value={newJobDate} onChange={e=>setNewJobDate(e.target.value)}/></div><div className="space-y-1"><label className="block text-xs font-bold text-gray-500">เลือกเวลา:</label><select className="w-full border rounded p-2 text-lg font-bold" value={newJobTimeSlot} onChange={e=>setNewJobTimeSlot(e.target.value)}>{TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}</select></div></div><div className="flex gap-3 justify-end mt-6"><button onClick={()=>setShowAddJobModal(false)} className="px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button><button onClick={confirmAddJob} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-4 py-2 rounded-lg hover:opacity-90">ตกลง</button></div></div></div>}
-      {activeLeaveCell && (<div ref={leaveMenuRef} className="absolute bg-white shadow-xl border rounded-lg p-1 z-[999] min-w-[120px] no-print" style={{ top: activeLeaveCell.top, left: activeLeaveCell.left }}>{LEAVE_TYPES.map(type => (<button key={type.id} onClick={() => selectLeaveType(type.id)} className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 rounded flex items-center gap-2 ${type.color.replace('bg-', 'text-')}`}><span className={`w-4 h-4 flex items-center justify-center rounded-full text-[9px] ${type.color}`}>{type.short}</span>{type.label}</button>))}<div className="h-px bg-gray-100 my-1"></div><button onClick={() => selectLeaveType('clear')} className="w-full text-left px-3 py-2 text-xs text-red-500 hover:bg-red-50 rounded">ยกเลิกสถานะ</button></div>)}
+      {activeLeaveCell && (<div ref={leaveMenuRef} className="absolute bg-white shadow-xl border rounded-lg p-1 z-[999] min-w-[120px] no-print" style={{ top: activeLeaveCell.top, left: activeLeaveCell.left }}>{LEAVE_TYPES.map(type => (<button key={type.id} onClick={() => selectLeaveType(type.id)} className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 rounded flex items-center gap-2 ${type.color.replace('bg-', 'text-')}`}><span className={`w-4 h-4 flex items-center justify-center rounded-full text-[9px] ${type.color}`}>{type.short}</span>{type.label}</button>))}<div className="h-px bg-gray-100 my-1"></div><button onClick={() => selectLeaveType('clear')} className="w-full text-left px-3 py-2 text-xs text-red-500 hover:bg-red-50 rounded">ยกเลิกวันลา</button></div>)}
 
       <div className="bg-white border-b sticky top-0 z-50 no-print">
         <div className="max-w-7xl mx-auto px-4 py-3">
@@ -885,7 +807,6 @@ export default function App() {
 
       <div className={`max-w-7xl mx-auto px-4 py-6 ${activeTab !== 'reports' ? 'no-print' : ''}`}>
         <ErrorBoundary>
-          {/* Dashboard Tab */}
           {activeTab === 'dashboard' && (
              <div className="space-y-6">
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -903,7 +824,6 @@ export default function App() {
              </div>
           )}
 
-          {/* Jobs Tab */}
           {activeTab === 'jobs' && (
              <div className="bg-white rounded-xl shadow border overflow-hidden">
                  <div className="p-4 border-b flex justify-between items-center bg-gray-50 gap-4">
@@ -915,19 +835,17 @@ export default function App() {
                          <button onClick={initiateAddJob} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-3 py-1.5 rounded text-xs flex items-center gap-1 hover:opacity-90"><Plus size={14}/> เพิ่ม</button>
                      </div>
                  </div>
-                 <div className="overflow-x-auto"><table className="w-full text-left"><thead className="bg-gray-100 text-xs text-gray-500 font-bold uppercase"><tr><th className="p-3 text-center">#</th><th className="p-3">วันที่/เวลา</th><th className="p-3">รายละเอียด</th><th className="p-3">งาน</th><th className="p-3 text-center">ราง</th><th className="p-3">ทีมช่าง (ตามวันที่)</th><th className="p-3 text-right">Incentive</th><th className="p-3 text-center">ตรวจสอบ</th><th className="p-3 text-center">ลำดับ</th><th className="p-3"></th></tr></thead><tbody className="divide-y text-xs">{calculatedData.periodJobs.filter(j => { const q = searchQuery.toLowerCase(); return !q || (j.customer || '').toLowerCase().includes(q) || (j.orderNo || '').toLowerCase().includes(q) || (j.date || '').includes(q); }).map((j, i) => (<tr key={j.id} className={`hover:bg-gray-50 ${j.isChecked ? 'bg-green-50/30' : ''}`}><td className="p-3 text-center text-gray-400">{i+1}</td><td className="p-3 w-36 align-top"><input type="date" value={j.date} onChange={e=>updateJob(j.id,'date',e.target.value)} className="border rounded p-1 w-full mb-1"/><select className="border rounded p-1 w-full text-[10px]" value={j.timeSlot || DEFAULT_TIME_SLOT} onChange={e=>updateJob(j.id,'timeSlot',e.target.value)}>{TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}</select></td><td className="p-3 w-48 align-top space-y-1"><input placeholder="Order No." value={j.orderNo || ''} onChange={e=>updateJob(j.id,'orderNo',e.target.value)} className="border rounded p-1 w-full bg-blue-50 font-bold"/><input placeholder="ลูกค้า" value={j.customer||''} onChange={e=>updateJob(j.id,'customer',e.target.value)} className="border rounded p-1 w-full"/><input placeholder="สถานที่" value={j.location||''} onChange={e=>updateJob(j.id,'location',e.target.value)} className="border rounded p-1 w-full"/></td><td className="p-3 align-top"><select value={j.type} onChange={e=>updateJob(j.id,'type',e.target.value)} className="border rounded p-1 w-full">{JOB_TYPES.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}</select></td><td className="p-3 align-top"><input type="number" value={j.rails} onChange={e=>updateJob(j.id,'rails',e.target.value)} className="border rounded p-1 w-12 text-center"/></td><td className="p-3 align-top"><div className="flex flex-wrap gap-1">{teams.map(t => {
-                   const teamMembersOnDate = allMembers.filter(m => isMemberInTeamOnDate(m, t.id, j.date));
-                   if (teamMembersOnDate.length === 0) return null;
-                   
-                   return (
+                 <div className="overflow-x-auto"><table className="w-full text-left"><thead className="bg-gray-100 text-xs text-gray-500 font-bold uppercase"><tr><th className="p-3 text-center">#</th><th className="p-3">วันที่/เวลา</th><th className="p-3">รายละเอียด</th><th className="p-3">งาน</th><th className="p-3 text-center">ราง</th><th className="p-3">ทีมช่าง</th><th className="p-3 text-right">Incentive</th><th className="p-3 text-center">ตรวจสอบ</th><th className="p-3 text-center">ลำดับ</th><th className="p-3"></th></tr></thead><tbody className="divide-y text-xs">{calculatedData.periodJobs.filter(j => { const q = searchQuery.toLowerCase(); return !q || (j.customer || '').toLowerCase().includes(q) || (j.orderNo || '').toLowerCase().includes(q) || (j.date || '').includes(q); }).map((j, i) => (<tr key={j.id} className={`hover:bg-gray-50 ${j.isChecked ? 'bg-green-50/30' : ''}`}><td className="p-3 text-center text-gray-400">{i+1}</td><td className="p-3 w-36 align-top"><input type="date" value={j.date} onChange={e=>updateJob(j.id,'date',e.target.value)} className="border rounded p-1 w-full mb-1"/><select className="border rounded p-1 w-full text-[10px]" value={j.timeSlot || DEFAULT_TIME_SLOT} onChange={e=>updateJob(j.id,'timeSlot',e.target.value)}>{TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}</select></td><td className="p-3 w-48 align-top space-y-1"><input placeholder="Order No." value={j.orderNo || ''} onChange={e=>updateJob(j.id,'orderNo',e.target.value)} className="border rounded p-1 w-full bg-blue-50 font-bold"/><input placeholder="ลูกค้า" value={j.customer||''} onChange={e=>updateJob(j.id,'customer',e.target.value)} className="border rounded p-1 w-full"/><input placeholder="สถานที่" value={j.location||''} onChange={e=>updateJob(j.id,'location',e.target.value)} className="border rounded p-1 w-full"/></td><td className="p-3 align-top"><select value={j.type} onChange={e=>updateJob(j.id,'type',e.target.value)} className="border rounded p-1 w-full">{JOB_TYPES.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}</select></td><td className="p-3 align-top"><input type="number" value={j.rails} onChange={e=>updateJob(j.id,'rails',e.target.value)} className="border rounded p-1 w-12 text-center"/></td><td className="p-3 align-top"><div className="flex flex-wrap gap-1">{teams.map(t => (
                    <div key={t.id} className="border p-1 rounded bg-white">
                        <div className="font-bold text-[9px] mb-1">{t.name}</div>
                        <div className="flex gap-1 flex-wrap">
-                           {teamMembersOnDate.map((m, mIdx) => {
+                           {(t.members || []).map((m, mIdx) => {
                                const isSelected = (j.selectedTechs || []).includes(m.id);
+                               
                                const leave = leaves.find(l => l.techId === m.id && l.date === j.date);
                                const isNoInc = leave?.type === 'no_inc';
-                               const isLeave = leave && !isNoInc;
+                               const isLeave = leave && !isNoInc; 
+
                                const isResigned = m.resignDate && j.date >= m.resignDate;
                                const isNotYetJoined = m.joinDate && j.date < m.joinDate;
                                const isDisabled = isLeave || isResigned || isNotYetJoined;
@@ -951,21 +869,18 @@ export default function App() {
                            })}
                        </div>
                    </div>
-               )})}</div></td><td className="p-3 text-right align-top font-bold">฿{j.calculatedValue.toLocaleString()}</td><td className="p-3 text-center align-top"><button onClick={()=>toggleJobCheck(j.id, j.isChecked)} className="text-gray-500 hover:text-black">{j.isChecked ? <CheckSquare size={18} className="text-green-600" /> : <Square size={18} />}</button></td><td className="p-3 text-center align-top"><div className="flex flex-col items-center"><button onClick={()=>moveJob(j.id, -1, calculatedData.periodJobs)} className="text-gray-400 hover:text-black"><ArrowUp size={12}/></button><button onClick={()=>moveJob(j.id, 1, calculatedData.periodJobs)} className="text-gray-400 hover:text-black"><ArrowDown size={12}/></button></div></td><td className="p-3 text-center align-top"><button onClick={()=>removeJob(j.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={14}/></button></td></tr>))}</tbody></table></div>
+               ))}</div></td><td className="p-3 text-right align-top font-bold">฿{j.calculatedValue.toLocaleString()}</td><td className="p-3 text-center align-top"><button onClick={()=>toggleJobCheck(j.id, j.isChecked)} className="text-gray-500 hover:text-black">{j.isChecked ? <CheckSquare size={18} className="text-green-600" /> : <Square size={18} />}</button></td><td className="p-3 text-center align-top"><div className="flex flex-col items-center"><button onClick={()=>moveJob(j.id, -1, calculatedData.periodJobs)} className="text-gray-400 hover:text-black"><ArrowUp size={12}/></button><button onClick={()=>moveJob(j.id, 1, calculatedData.periodJobs)} className="text-gray-400 hover:text-black"><ArrowDown size={12}/></button></div></td><td className="p-3 text-center align-top"><button onClick={()=>removeJob(j.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={14}/></button></td></tr>))}</tbody></table></div>
              </div>
           )}
 
-          {/* Teams Tab */}
           {activeTab === 'teams' && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {teams.map(t => {
-                      const currentTeamMembers = allMembers.filter(m => m.currentTeamId === t.id);
-                      return (
+                  {teams.map(t => (
                       <div key={t.id} className="bg-white p-4 rounded-xl shadow border relative group">
                           <button onClick={()=>handleDeleteTeam(t.id)} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500"><Trash2 size={14}/></button>
-                          <h3 className="font-bold text-lg mb-2">{t.name} <span className="text-xs font-normal text-gray-500">({currentTeamMembers.length} คน)</span></h3>
+                          <h3 className="font-bold text-lg mb-2">{t.name}</h3>
                           <ul className="space-y-2 mb-4">
-                            {currentTeamMembers.map((m, mIdx) => (
+                            {(t.members||[]).map((m, mIdx) => (
                                 <li key={`${m.id}-${mIdx}`} className="flex flex-col text-xs bg-gray-50 p-2 rounded hover:bg-gray-100">
                                     
                                     {transferringMember?.member.id === m.id && transferringMember?.teamId === t.id ? (
@@ -981,41 +896,26 @@ export default function App() {
                                                 <button onClick={()=>setTransferringMember(null)} className="bg-gray-300 text-gray-700 px-2 py-1.5 rounded text-xs w-full hover:bg-gray-400">ยกเลิก</button>
                                             </div>
                                         </div>
-                                    ) : editingMember?.id === m.id ? (
+                                    ) : editingMember?.memberId === m.id ? (
                                         <div className="flex-1 space-y-2">
-                                            <input className="border rounded w-full p-1" value={editingMember.name} onChange={e=>setEditingMember({...editingMember, name:e.target.value})} />
-                                            <div className="flex gap-1"><span className="w-8">เริ่ม:</span><input type="date" className="border rounded p-1" value={editingMember.joinDate} onChange={e=>setEditingMember({...editingMember, joinDate:e.target.value})} /></div>
-                                            <div className="flex gap-1"><span className="w-8">ออก:</span><input type="date" className="border rounded p-1" value={editingMember.resignDate} onChange={e=>setEditingMember({...editingMember, resignDate:e.target.value})} /></div>
-                                            
-                                            <div className="mt-2 pt-2 border-t border-gray-200">
-                                                <span className="text-[10px] font-bold text-gray-500">ประวัติการสังกัดทีม:</span>
-                                                <ul className="mt-1 space-y-1">
-                                                    {(editingMember.teamHistory || []).map((history, hIdx) => {
-                                                        const hTeam = teams.find(ht => ht.id === history.teamId);
-                                                        return (
-                                                            <li key={hIdx} className="text-[10px] flex justify-between bg-white p-1 rounded border items-center">
-                                                                <span>{hTeam?.name || 'Unknown'} (ตั้งแต่ {formatDate(history.effectiveDate)})</span>
-                                                                {hIdx > 0 && <button onClick={() => removeMigrationHistory(m.id, hIdx)} className="text-red-400 hover:text-red-600 px-1">x</button>}
-                                                            </li>
-                                                        );
-                                                    })}
-                                                </ul>
-                                            </div>
+                                            <input className="border rounded w-full p-1" value={editingMember.data.name} onChange={e=>setEditingMember({...editingMember, data:{...editingMember.data, name:e.target.value}})} />
+                                            <div className="flex gap-1"><span className="w-8">เริ่ม:</span><input type="date" className="border rounded p-1" value={editingMember.data.joinDate} onChange={e=>setEditingMember({...editingMember, data:{...editingMember.data, joinDate:e.target.value}})} /></div>
+                                            <div className="flex gap-1"><span className="w-8">ออก:</span><input type="date" className="border rounded p-1" value={editingMember.data.resignDate} onChange={e=>setEditingMember({...editingMember, data:{...editingMember.data, resignDate:e.target.value}})} /></div>
                                             <div className="flex gap-2 mt-1">
-                                                <button onClick={handleUpdateMember} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-2 py-1 rounded w-full">บันทึก</button>
-                                                <button onClick={()=>setEditingMember(null)} className="bg-gray-200 px-2 py-1 rounded w-full">ยกเลิก</button>
+                                                <button onClick={handleUpdateMember} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-2 py-1 rounded">บันทึก</button>
+                                                <button onClick={()=>setEditingMember(null)} className="bg-gray-200 px-2 py-1 rounded">ยกเลิก</button>
                                             </div>
                                         </div>
                                     ) : (
                                         <div className="flex justify-between items-center w-full">
                                             <div>
-                                                <div className={`font-medium ${m.resignDate ? 'text-gray-400 line-through' : ''}`}>{m.name} {m.resignDate && <span className="text-[9px] text-red-500 no-underline ml-1">(ออกแล้ว)</span>}</div>
+                                                <div className={`font-medium ${m.resignDate ? 'text-gray-400 line-through' : ''}`}>{m.name} {m.resignDate && <span className="text-[9px] text-red-500 no-underline ml-1">(ออก/ย้าย)</span>}</div>
                                                 <div className="text-[10px] text-gray-400">{formatDate(m.joinDate)} {m.resignDate ? `- ${formatDate(m.resignDate)}` : ''}</div>
                                             </div>
                                             <div className="flex gap-1">
                                                 <button onClick={() => setTransferringMember({ teamId: t.id, member: m, targetTeamId: '', date: new Date().toISOString().split('T')[0] })} className="text-gray-400 hover:text-blue-600 p-1 bg-white rounded shadow-sm border" title="ย้ายทีม"><ArrowRightLeft size={12}/></button>
-                                                <button onClick={() => setEditingMember(m)} className="text-gray-400 hover:text-black p-1 bg-white rounded shadow-sm border"><Pencil size={12}/></button>
-                                                <button onClick={()=>handleDeleteMember(m.id)} className="text-gray-400 hover:text-red-500 p-1 bg-white rounded shadow-sm border"><Trash2 size={12}/></button>
+                                                <button onClick={() => setEditingMember({ teamId: t.id, memberId: m.id, data: { name: m.name, joinDate: m.joinDate, resignDate: m.resignDate || '' } })} className="text-gray-400 hover:text-black p-1 bg-white rounded shadow-sm border"><Pencil size={12}/></button>
+                                                <button onClick={()=>handleDeleteMember(t.id, m.id)} className="text-gray-400 hover:text-red-500 p-1 bg-white rounded shadow-sm border"><X size={12}/></button>
                                             </div>
                                         </div>
                                     )}
@@ -1024,12 +924,11 @@ export default function App() {
                           </ul>
                           {addingMemberTo === t.id ? (<div className="bg-gray-50 p-2 rounded space-y-2"><input placeholder="ชื่อ" className="border w-full p-1 text-xs rounded" value={newMember.name} onChange={e=>setNewMember({...newMember, name:e.target.value})}/><div className="flex gap-1"><span className="text-[10px] w-8 pt-1">เริ่ม:</span><input type="date" className="border w-full p-1 text-xs rounded" value={newMember.joinDate} onChange={e=>setNewMember({...newMember, joinDate:e.target.value})}/></div><div className="flex gap-1"><span className="text-[10px] w-8 pt-1">ออก:</span><input type="date" className="border w-full p-1 text-xs rounded" value={newMember.resignDate} onChange={e=>setNewMember({...newMember, resignDate:e.target.value})}/></div><div className="flex gap-1"><button onClick={()=>handleAddMember(t.id)} style={{backgroundColor: themeColor, color: themeTextColor}} className="w-full rounded text-xs py-1">Save</button><button onClick={()=>setAddingMemberTo(null)} className="bg-gray-200 w-full rounded text-xs py-1">Cancel</button></div></div>) : (<button onClick={()=>{setAddingMemberTo(t.id); setNewMember({name:'',joinDate:new Date().toISOString().split('T')[0], resignDate: ''})}} className="w-full border-2 border-dashed p-2 rounded text-xs text-gray-400 hover:border-gray-400 hover:text-gray-600">+ เพิ่มช่าง</button>)}
                       </div>
-                  )})}
+                  ))}
                   {isAddingTeam ? (<div className="bg-white p-4 rounded-xl shadow border"><input placeholder="ชื่อทีม" className="border w-full p-2 mb-2 rounded" autoFocus value={newTeamName} onChange={e=>setNewTeamName(e.target.value)}/><div className="flex gap-2"><button onClick={handleAddTeam} style={{backgroundColor: themeColor, color: themeTextColor}} className="flex-1 py-2 rounded">สร้าง</button><button onClick={()=>setIsAddingTeam(false)} className="bg-gray-100 flex-1 py-2 rounded">ยกเลิก</button></div></div>) : <button onClick={()=>setIsAddingTeam(true)} className="bg-gray-50 border-2 border-dashed rounded-xl flex items-center justify-center p-8 text-gray-400 hover:bg-white hover:border-gray-800 transition-all"><Plus size={32}/></button>}
               </div>
           )}
 
-          {/* Calendar Tab */}
           {activeTab === 'calendar' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="bg-white p-6 rounded-xl shadow border">
@@ -1055,22 +954,18 @@ export default function App() {
                       </div>
                   </div>
                   <div className="bg-white p-6 rounded-xl shadow border">
-                      <h3 className="font-bold mb-4 flex items-center gap-2"><Users className="text-orange-500"/> วันลาพนักงาน / No Incentive</h3>
+                      <h3 className="font-bold mb-4 flex items-center gap-2"><Users className="text-orange-500"/> วันลาพนักงาน</h3>
                       <div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr><th className="text-left sticky left-0 bg-white p-2 min-w-[100px]">ชื่อ</th>{getDaysArray(period.start, period.end).map(d=><th key={d} className="min-w-[30px] p-1 text-center bg-gray-50 border-b"><div className="text-[8px] text-gray-400">{parseInt(d.split('-')[2])}</div></th>)}</tr></thead>
                       <tbody>
-                      {allMembers.map((m, flatIdx) => {
-                            const isResigned = m.resignDate && m.resignDate <= period.end;
-                            return (
+                      {teams.flatMap(t => 
+                            (t.members||[]).map(m => ({ ...m, teamId: t.id }))
+                        ).map((m, flatIdx) => (
                             <tr key={`${m.id}-${flatIdx}`} className="hover:bg-gray-50">
-                                <td className={`py-2 sticky left-0 bg-white border-r font-medium pl-2 ${isResigned ? 'text-gray-400 line-through' : ''}`}>{m.name}</td>
+                                <td className="py-2 sticky left-0 bg-white border-r font-medium pl-2">{m.name}</td>
                                 {getDaysArray(period.start, period.end).map(d => {
-                                    const isResignedOnDate = m.resignDate && m.resignDate <= d;
                                     const l = leaves.find(x => x.techId === m.id && x.date === d);
                                     const holiday = holidays.includes(d);
                                     const leaveType = l ? LEAVE_TYPES.find(t => t.id === l.type) : null;
-                                    
-                                    if (isResignedOnDate) return <td key={d} className="border text-center bg-gray-100"></td>;
-
                                     return (
                                         <td 
                                             key={d} 
@@ -1081,13 +976,12 @@ export default function App() {
                                     );
                                 })}
                             </tr>
-                        )})}
+                        ))}
                       </tbody></table></div>
                   </div>
               </div>
           )}
 
-          {/* New Reports Tab */}
           {activeTab === 'reports' && (
               <div className="bg-white rounded-xl shadow border overflow-hidden">
                   <div className="p-4 border-b flex justify-between items-center bg-gray-50 no-print">
@@ -1168,10 +1062,9 @@ export default function App() {
                                   <label className="font-bold text-gray-700">เลือกพนักงาน:</label>
                                   <select className="border rounded p-2 text-sm" value={selectedReportTechId} onChange={e=>setSelectedReportTechId(e.target.value)}>
                                       <option value="">-- กรุณาเลือกพนักงาน --</option>
-                                      {allMembers.map(m => {
-                                          const currentTeam = teams.find(t => t.id === m.currentTeamId)?.name || 'Unknown';
-                                          return <option key={m.id} value={m.id}>{m.name} ({currentTeam}) {m.resignDate ? '(ลาออกแล้ว)' : ''}</option>;
-                                      })}
+                                      {teams.flatMap(t => (t.members||[]).map(m => ({id: m.id, name: m.name, tName: t.name}))).map(m => (
+                                          <option key={m.id} value={m.id}>{m.name} ({m.tName})</option>
+                                      ))}
                                   </select>
                               </div>
 
@@ -1194,7 +1087,7 @@ export default function App() {
                                                       <td className="border p-2 whitespace-nowrap">{formatDate(row.date)}</td>
                                                       {row.isHoliday ? (
                                                           <td colSpan="8" className="border p-2 text-center">วันหยุดบริษัท</td>
-                                                      ) : row.isLeave && !row.customer.includes('สถานะ: No Incentive') ? (
+                                                      ) : row.isLeave ? (
                                                           <td colSpan="8" className="border p-2 text-center font-bold">{row.customer}</td>
                                                       ) : (
                                                           <>
@@ -1205,7 +1098,7 @@ export default function App() {
                                                             <td className="border p-2 text-center">{row.rails}</td>
                                                             <td className="border p-2 text-center">{row.techs}</td>
                                                             <td className="border p-2 text-center text-[10px] text-gray-500">{row.note}</td>
-                                                            <td className="border p-2 text-right">{row.inc !== '-' && row.inc > 0 ? `฿${Number(row.inc).toLocaleString()}` : (row.inc === 0 ? '฿0' : '-')}</td>
+                                                            <td className="border p-2 text-right">{row.inc !== '-' && row.inc > 0 ? `฿${Number(row.inc).toLocaleString()}` : (row.inc === 0 ? '฿0 (ไม่เข้าเกณฑ์)' : '-')}</td>
                                                           </>
                                                       )}
                                                   </tr>
@@ -1233,7 +1126,6 @@ export default function App() {
               </div>
           )}
 
-          {/* Admin Tab */}
           {activeTab === 'admin' && currentUser?.role === 'super_admin' && (
               <div className="bg-white p-6 rounded-xl shadow border max-w-2xl mx-auto">
                   <h3 className="font-bold text-lg mb-6 flex items-center gap-2"><Shield className="text-blue-600"/> การตั้งค่าผู้ดูแลระบบ (Super Admin)</h3>
@@ -1297,7 +1189,7 @@ export default function App() {
                       <div className="bg-orange-50 p-4 rounded-lg border border-orange-100 flex items-center justify-between">
                           <div>
                               <p className="text-sm font-bold text-orange-800">กู้คืนข้อมูลเริ่มต้น (Reset Data)</p>
-                              <p className="text-xs text-orange-600 mt-1">ใช้เมื่อข้อมูลทีมช่างหาย หรือต้องการเริ่มระบบใหม่ (V7)</p>
+                              <p className="text-xs text-orange-600 mt-1">ใช้เมื่อข้อมูลทีมช่างหาย หรือต้องการเริ่มระบบใหม่</p>
                           </div>
                           <button onClick={handleSeedData} className="bg-orange-600 text-white px-4 py-2 rounded text-xs hover:bg-orange-700 transition-colors">กู้คืนข้อมูล</button>
                       </div>
