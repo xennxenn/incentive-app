@@ -386,17 +386,29 @@ export default function App() {
   };
 
   const handleCleanGhostData = async () => {
-      requestConfirm('ล้างข้อมูลช่างตกค้าง', 'ระบบจะค้นหาและลบรายชื่อช่างที่ถูกลบไปแล้วแต่ยังค้างอยู่ในงาน ยืนยันหรือไม่?', async () => {
+      requestConfirm('ล้างข้อมูลช่างตกค้าง', 'ระบบจะค้นหาและลบรายชื่อช่างที่ถูกลบไปแล้ว รวมถึงช่างที่ลาออก/ย้ายทีมแต่ยังมีชื่อค้างในงาน (Ghost IDs) ยืนยันหรือไม่?', async () => {
           try {
               const batch = writeBatch(db);
               let cleanedCount = 0;
-              const validMemberIds = new Set();
-              
-              teams.forEach(t => (t.members || []).forEach(m => validMemberIds.add(m.id)));
 
               jobs.forEach(job => {
                   const originalTechs = job.selectedTechs || [];
-                  const validTechs = originalTechs.filter(id => validMemberIds.has(id));
+                  const validTechs = originalTechs.filter(tid => {
+                      // 1. ค้นหาว่า ID นี้มีตัวตนในทีมหรือไม่
+                      let memberRecord = null;
+                      for (const t of teams) {
+                          const found = (t.members || []).find(m => m.id === tid);
+                          if (found) { memberRecord = found; break; }
+                      }
+                      if (!memberRecord) return false; // ไม่มีตัวตนแล้ว
+                      
+                      // 2. เช็คว่าใน "วันที่ลงงาน" ช่างคนนี้ยังมีสภาพเป็นพนักงานอยู่หรือไม่
+                      const isJoined = !memberRecord.joinDate || memberRecord.joinDate <= job.date;
+                      const isResigned = memberRecord.resignDate && job.date >= memberRecord.resignDate;
+                      
+                      // ถ้ายังไม่เริ่มงาน หรือ ลาออกไปแล้วในวันนั้น ให้คัดทิ้งทันที
+                      return isJoined && !isResigned;
+                  });
                   
                   if (validTechs.length !== originalTechs.length) {
                       const jobRef = doc(db, 'artifacts', appId, 'public', 'data', 'jobs', job.id);
@@ -414,18 +426,6 @@ export default function App() {
               setConfirmModal(null);
           } catch (e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
       });
-  };
-
-  const handleSeedData = async () => { 
-      requestConfirm('กู้คืนข้อมูล', 'คำเตือน: นี่คือการล้างข้อมูลทีมที่มีอยู่ทั้งหมดแล้วกู้คืนทีมเริ่มต้น ยืนยันหรือไม่?', async () => { 
-          try {
-              const batch = writeBatch(db); 
-              teams.forEach(t => batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'teams', t.id))); 
-              await batch.commit(); 
-              for (const t of DEFAULT_TEAMS_DATA) await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), t); 
-              setConfirmModal(null); showNotification('กู้คืนสำเร็จ');
-          } catch(e) { handlePermissionError(e); }
-      }); 
   };
 
   const handleAddTeam = async () => { 
@@ -531,6 +531,7 @@ export default function App() {
     try {
         const periodJobs = jobs.filter(j => j.date >= period.start && j.date <= period.end);
         
+        // Sorting Jobs
         periodJobs.sort((a, b) => {
             const dateA = a.date || ''; const dateB = b.date || '';
             const timeA = a.timeSlot || ''; const timeB = b.timeSlot || '';
@@ -556,12 +557,22 @@ export default function App() {
             if (!excludedTypes.includes(job.type)) globalTotalRails += rails;
             if (job.type === 'measure') globalTotalMeasureJobs += 1;
 
-            // กรอง 1: นับเฉพาะช่างที่มีตัวตนจริงๆ ไม่โดนลบ
-            const validTechs = (job.selectedTechs || []).filter(tid => 
-                teams.some(t => (t.members || []).some(m => m.id === tid))
-            );
+            // ⚡️ FILTER 1 (ปรับปรุงใหม่เพื่อกัน Ghost ID): นับเฉพาะช่างที่ทำงานจริง "ในวันที่เกิดงานนั้นๆ"
+            const validTechs = (job.selectedTechs || []).filter(tid => {
+                let memberRecord = null;
+                for (const t of teams) {
+                    const found = (t.members || []).find(m => m.id === tid);
+                    if (found) { memberRecord = found; break; }
+                }
+                if (!memberRecord) return false;
+                
+                const isJoined = !memberRecord.joinDate || memberRecord.joinDate <= job.date;
+                const isResigned = memberRecord.resignDate && job.date >= memberRecord.resignDate;
+                
+                return isJoined && !isResigned;
+            });
             
-            // กรอง 2: เอาคนที่ติดสถานะ No Incentive ออกไป ไม่ให้เอามาคูณเงิน
+            // ⚡️ FILTER 2: กรองคนที่ไม่ได้ติดสถานะ no_inc (No Incentive) เพื่อเอามาคำนวณเงิน 250
             const payingTechs = validTechs.filter(tid => {
                 const l = leaves.find(x => x.techId === tid && x.date === job.date);
                 return !(l && l.type === 'no_inc');
@@ -569,7 +580,7 @@ export default function App() {
 
             const cnt = payingTechs.length; 
 
-            // หากไม่มีใครเลย ยอดบังคับเป็น 0
+            // หากไม่มีช่างที่มีสิทธิ์รับเงินเลย ยอดงานนี้จะเป็น 0 บาท ป้องกันค่า 250 ผี
             if (cnt === 0) {
                 val = 0;
             } else {
@@ -579,6 +590,7 @@ export default function App() {
             }
             job.calculatedValue = val; 
 
+            // แจกจ่ายเงินให้กับ "ทีม" ที่ส่ง payingTechs มาเท่านั้น
             if (cnt > 0) {
                 const teamsInvolved = {}; let totalTechsInJob = 0;
                 payingTechs.forEach(tid => {
@@ -632,7 +644,7 @@ export default function App() {
                             memberLeavesList[m.id].push({ date: day, type: leave.type });
                             const lName = LEAVE_TYPES.find(x => x.id === leave.type)?.label || 'ลา';
                             
-                            // ถ้าสถานะ No Incentive
+                            // ถ้าเป็น no_inc ไม่นับเป็นวันลา แต่บันทึกเป็น Status การทำงาน
                             if (leave.type === 'no_inc') {
                                 reportTechLogs[m.id].rows.push({ isLeave: true, date: day, time: '-', type: '-', customer: `สถานะ: ${lName}`, location: '-', rails: '-', techs: '-', note: '-', inc: '-' });
                             } else {
@@ -645,10 +657,21 @@ export default function App() {
                 const dayJobs = periodJobs.filter(j => j.date === day).sort((a,b) => (a.timeSlot||'').localeCompare(b.timeSlot||''));
                 dayJobs.forEach(job => {
                     const involvedTeams = {};
-                    const validTechsInJob = (job.selectedTechs || []).filter(tid => 
-                        teams.some(t => (t.members || []).some(m => m.id === tid))
-                    );
-                    const totalTechsInJob = validTechsInJob.length;
+                    
+                    // นับเฉพาะช่างที่ยังเป็นคนทำงานจริง ไม่รวมผี
+                    const validTechsInJob = (job.selectedTechs || []).filter(tid => {
+                        let memberRecord = null;
+                        for (const t of teams) {
+                            const found = (t.members || []).find(m => m.id === tid);
+                            if (found) { memberRecord = found; break; }
+                        }
+                        if (!memberRecord) return false;
+                        const isJoined = !memberRecord.joinDate || memberRecord.joinDate <= job.date;
+                        const isResigned = memberRecord.resignDate && job.date >= memberRecord.resignDate;
+                        return isJoined && !isResigned;
+                    });
+                    
+                    const totalTechsInJob = validTechsInJob.length; 
                     
                     validTechsInJob.forEach(tid => {
                         const tMatch = teams.find(x => (x.members||[]).some(m => m.id === tid));
@@ -666,6 +689,7 @@ export default function App() {
                         const jobVal = job.calculatedValue || 0;
                         const jobRails = parseInt(job.rails) || 0;
                         
+                        // เงินของทีมได้มาจากสัดส่วนของคนที่มีสิทธิ์ (ที่ผ่านการกรองจาก filter 2 ด้านบนแล้ว)
                         const teamShareAmt = totalTechsInJob > 0 ? (jobVal * teamTechCount) / totalTechsInJob : 0;
                         const teamRailsShare = isExcluded ? 0 : (jobRails / totalTeams);
                         const typeLabel = JOB_TYPES.find(t=>t.id===job.type)?.label || job.type;
@@ -673,7 +697,10 @@ export default function App() {
 
                         reportTeamLogs[team.id].rows.push({ date: job.date, time: job.timeSlot || '-', type: typeLabel, customer: job.customer || '-', location: job.location || '-', rails: isExcluded ? '-' : Number(teamRailsShare.toFixed(2)), techs: teamTechCount, note: noteStr, inc: teamShareAmt });
 
+                        // คำนวณรายหัว
                         const activeMembers = membersList.filter(m => m.joinDate <= day && (!m.resignDate || m.resignDate > day));
+                        
+                        // คนที่มีสิทธิ์รับเงิน = ไม่ลา และไม่ได้เป็น no_inc
                         const eligibleMembers = activeMembers.filter(m => {
                             const leave = leaves.find(l => l.techId === m.id && l.date === day);
                             return !leave || leave.type === 'vacation';
