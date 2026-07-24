@@ -1,139 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { 
-  Calendar, Users, DollarSign, FileText, Plus, Trash2, Edit2, 
-  ChevronDown, CheckSquare, Square, Printer, Save, RefreshCw, X, FolderPlus,
-  AlertCircle, CheckCircle, Cloud, Loader2, ArrowUp, ArrowDown, Lock, LogOut, UserPlus, Shield,
-  BarChart3, PieChart, UserCog, CalendarDays, Database, FileSpreadsheet, AlertTriangle, Clock, UserMinus, Pencil, Ruler, MapPin, Key, Palette, Search, ArrowRightLeft
-} from 'lucide-react';
-
-// --- Firebase Imports ---
-import { initializeApp, getApps, getApp } from "firebase/app";
-import { 
-  getAuth, 
-  signInAnonymously, 
-  signInWithCustomToken,
-  onAuthStateChanged
-} from "firebase/auth";
-import { 
-  getFirestore, 
-  initializeFirestore,
-  collection, 
-  doc, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc, 
-  onSnapshot, 
-  setDoc,
-  serverTimestamp,
-  writeBatch,
-  getDocs,
-  query,
-  where
-} from "firebase/firestore";
-
-// ------------------------------------------------------------------
-// 🚀 DEPLOYMENT CONFIGURATION
-// ------------------------------------------------------------------
-let app;
-let auth;
-let db;
-let firebaseError = null;
-
-// 1. Hardcoded Config (บังคับใช้ Firebase ของโปรเจกต์ incentive-employ)
-const manualConfig = {
-  apiKey: "AIzaSyCRtYrko1XhpTTCRecRqKduASdSdimi64M",
-  authDomain: "incentive-employ.firebaseapp.com",
-  projectId: "incentive-employ",
-  storageBucket: "incentive-employ.firebasestorage.app",
-  messagingSenderId: "938778171328",
-  appId: "1:938778171328:web:5f58ddff86442240321a25",
-  measurementId: "G-7604ZB6EJF"
-};
-
-try {
-  const apps = getApps();
-  if (apps.length === 0) {
-    app = initializeApp(manualConfig);
-    auth = getAuth(app);
-    db = initializeFirestore(app, { experimentalForceLongPolling: true });
-  } else {
-    app = apps[0];
-    auth = getAuth(app);
-    db = getFirestore(app);
-  }
-} catch (error) {
-  if (!/already exists/.test(error.message)) {
-    console.error('Firebase init error:', error);
-    firebaseError = `Connection Error: ${error.message}`;
-  }
-}
-
-// 2. กลับมาใช้ APP ID เดิม เพื่อดึงข้อมูลเดิมทั้งหมดกลับมา
-const appId = 'pasaya-incentive-v6-production';
-
-// โลโก้หลักของแอป
-const LOGO_URL = 'https://lh3.googleusercontent.com/d/1xT2ysUSWkTcFxs1ztoGxZuQcnO_c66Tu';
-
-// --- Error Boundary ---
-class ErrorBoundary extends React.Component {
-  constructor(props) { super(props); this.state = { hasError: false }; }
-  static getDerivedStateFromError(error) { return { hasError: true }; }
-  componentDidCatch(error, errorInfo) { console.error(error, errorInfo); }
-  render() {
-    if (this.state.hasError) return <div className="p-8 text-center text-red-600">เกิดข้อผิดพลาดในการแสดงผล กรุณารีเฟรชหน้าจอใหม่</div>;
-    return this.props.children;
-  }
-}
-
-// --- Constants ---
-const DEFAULT_SUPER_ADMIN = { username: 'T58121', password: '1234', name: 'Admin T58121', role: 'super_admin' };
-const JOB_TYPES = [
-  { id: 'measure', label: 'วัดพื้นที่' }, { id: 'travel_go', label: 'วันเดินทางไป' }, { id: 'travel_back', label: 'วันเดินทางกลับ' }, { id: 'install', label: 'ติดตั้ง' }, { id: 'install_high', label: 'ติดตั้ง/บันไดสูง' }, { id: 'install_scaffold', label: 'ติดตั้ง/นั่งร้าน' }, { id: 'fix', label: 'แก้ไข' }, { id: 'fix_scaffold', label: 'แก้ไข/นั่งร้าน' }, { id: 'fix_free', label: 'แก้ไขซ้ำ/ไม่คิด' },
-];
-
-// เพิ่ม No Incentive เข้าไปในปฏิทิน
-const LEAVE_TYPES = [
-    { id: 'sick', label: 'ลาป่วย', short: 'ป', color: 'bg-red-100 text-red-700' }, 
-    { id: 'business', label: 'ลากิจ', short: 'ก', color: 'bg-yellow-100 text-yellow-700' }, 
-    { id: 'vacation', label: 'พักร้อน', short: 'พ', color: 'bg-green-100 text-green-700' }, 
-    { id: 'absent', label: 'ขาดงาน', short: 'ข', color: 'bg-gray-200 text-gray-700' },
-    { id: 'no_inc', label: 'No Incentive', short: 'N', color: 'bg-purple-100 text-purple-700' }, 
-];
-
-const TIME_SLOTS = [ "10.00 - 11.30", "10.00 - 14.30", "10.00 - 17.00", "13.00 - 14.30", "13.00 - 17.00", "15.30 - 17.00" ];
-const DEFAULT_TIME_SLOT = "10.00 - 11.30";
-
-const MAIN_TABS = [
-  {id: 'dashboard', icon: BarChart3, label: 'ภาพรวม'},
-  {id: 'jobs', icon: FileText, label: 'บันทึกงาน'},
-  {id: 'teams', icon: Users, label: 'ทีมช่าง'},
-  {id: 'calendar', icon: Calendar, label: 'ปฏิทิน'},
-  {id: 'reports', icon: FileSpreadsheet, label: 'รายงาน'}
-];
-
-// --- Helpers ---
-const formatDate = (dateStr) => {
-  if (!dateStr) return '';
-  try { const [y, m, d] = dateStr.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: '2-digit' }); } catch (e) { return dateStr; }
-};
-const getDaysArray = (start, end) => {
-  const arr = [];
-  try {
-    const dt = new Date(start); const endDate = new Date(end);
-    while (dt <= endDate) {
-        const y = dt.getFullYear(); const m = String(dt.getMonth() + 1).padStart(2, '0'); const d = String(dt.getDate()).padStart(2, '0');
-        arr.push(`${y}-${m}-${d}`); dt.setDate(dt.getDate() + 1);
-    }
-  } catch (e) { }
-  return arr;
-};
-const getCurrentMonthPeriod = () => {
-    const now = new Date(); const y = now.getFullYear(); const m = now.getMonth();
-    const start = new Date(y, m, 1); const end = new Date(y, m + 1, 0);
-    const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    return { name: 'เดือนปัจจุบัน', start: fmt(start), end: fmt(end) };
-};
-
+// ... existing code ...
 const getContrastYIQ = (hexcolor) => {
     if (!hexcolor) return 'white';
     hexcolor = hexcolor.replace("#", "");
@@ -145,6 +10,18 @@ const getContrastYIQ = (hexcolor) => {
     return (yiq >= 128) ? 'black' : 'white';
 };
 
+// Check if a member belongs to a specific team on a specific date based on their history
+const isMemberInTeamOnDate = (member, teamId, targetDate) => {
+    if (!member.teamHistory || member.teamHistory.length === 0) {
+        return member.currentTeamId === teamId || !member.currentTeamId; 
+    }
+    const sortedHistory = [...member.teamHistory].sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate));
+    const activeRecord = sortedHistory.find(record => record.effectiveDate <= targetDate);
+    if (activeRecord) return activeRecord.teamId === teamId;
+    const oldestRecord = sortedHistory[sortedHistory.length - 1];
+    return oldestRecord && oldestRecord.teamId === teamId;
+};
+
 export default function App() {
   // --- State ---
   const [dbReady, setDbReady] = useState(false);
@@ -153,30 +30,10 @@ export default function App() {
   const [permissionError, setPermissionError] = useState(false); 
   
   const [teams, setTeams] = useState([]);
+  const [allMembers, setAllMembers] = useState([]); // New state for ALL members across teams
+
   const [holidays, setHolidays] = useState([]); 
-  const [leaves, setLeaves] = useState([]); 
-  const [jobs, setJobs] = useState([]);
-  const [savedPeriods, setSavedPeriods] = useState([]);
-  const [appUsers, setAppUsers] = useState([]); 
-  const [themeColor, setThemeColor] = useState('#424242');
-
-  const [period, setPeriod] = useState(() => {
-      try { const saved = localStorage.getItem(`pasaya_period_${appId}`); return saved ? JSON.parse(saved) : getCurrentMonthPeriod(); } catch (e) { return getCurrentMonthPeriod(); }
-  });
-  
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [reportType, setReportType] = useState('team'); 
-  const [selectedReportTeamId, setSelectedReportTeamId] = useState('');
-  const [selectedReportTechId, setSelectedReportTechId] = useState('');
-  
-  const [usernameInput, setUsernameInput] = useState('');
-  const [passwordInput, setPasswordInput] = useState('');
-
-  const [newTeamName, setNewTeamName] = useState('');
-  const [isAddingTeam, setIsAddingTeam] = useState(false);
-  const [addingMemberTo, setAddingMemberTo] = useState(null); 
-  const [newMember, setNewMember] = useState({ name: '', joinDate: '', resignDate: '' }); 
-  const [showPeriodManager, setShowPeriodManager] = useState(false);
+// ... existing code ...
   const [searchQuery, setSearchQuery] = useState('');
   const [jobSortOrder, setJobSortOrder] = useState('desc'); 
   
@@ -190,167 +47,31 @@ export default function App() {
   const [newJobTimeSlot, setNewJobTimeSlot] = useState(DEFAULT_TIME_SLOT);
 
   const [activeLeaveCell, setActiveLeaveCell] = useState(null); 
-  const [editingMember, setEditingMember] = useState(null); 
   const [editingPeriod, setEditingPeriod] = useState(null); 
-  const [transferringMember, setTransferringMember] = useState(null);
   
   const leaveMenuRef = useRef(null);
   const themeTextColor = useMemo(() => getContrastYIQ(themeColor), [themeColor]);
-
-  const visibleTabs = useMemo(() => {
-      const tabs = [...MAIN_TABS];
-      if (currentUser?.role === 'super_admin') {
-          tabs.push({ id: 'admin', icon: Shield, label: 'ผู้ดูแล' });
-      }
-      return tabs;
-  }, [currentUser]);
-
-  // --- Handlers ---
-  const showNotification = (message, type = 'success') => { setNotification({ message, type }); setTimeout(() => setNotification(null), 4000); };
-  const requestConfirm = (title, message, onConfirm) => { setConfirmModal({ title, message, onConfirm }); };
-
-  const handlePermissionError = (err) => {
-      console.error("Firebase Error:", err);
-      if (err?.message?.includes("Missing or insufficient permissions")) setPermissionError(true);
-  };
-
-  const openLeaveMenu = (e, techId, date) => {
-      const rect = e.currentTarget.getBoundingClientRect();
-      setActiveLeaveCell({ techId, date, top: rect.bottom + window.scrollY, left: Math.min(rect.left + window.scrollX, window.innerWidth - 150) });
-  };
-
-  const selectLeaveType = async (type) => {
-      if (!activeLeaveCell) return;
-      const { techId, date } = activeLeaveCell;
-      const existing = leaves.find(l => l.techId === techId && l.date === date);
-      
-      try {
-          if (type === 'clear') { 
-              if (existing) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'leaves', existing.id)); 
-          } else { 
-              if (existing) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'leaves', existing.id), { type }); 
-              else await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'leaves'), { techId, date, type }); 
-
-              // เอาชื่อออกจากงานอัตโนมัติ "เฉพาะเมื่อ" เป็นการลาหยุดจริงๆ ไม่ใช่ No Incentive
-              if (type !== 'no_inc') {
-                  const jobsOnDate = jobs.filter(j => j.date === date);
-                  let removedCount = 0;
-                  for (const job of jobsOnDate) {
-                      if ((job.selectedTechs || []).includes(techId)) {
-                          const newSelection = job.selectedTechs.filter(id => id !== techId);
-                          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', job.id), { selectedTechs: newSelection });
-                          removedCount++;
-                      }
-                  }
-                  if (removedCount > 0) showNotification(`บันทึกวันลาและนำชื่อออกจาก ${removedCount} งานในวันนี้แล้ว`, 'warning');
-                  else showNotification('บันทึกสำเร็จ');
-              } else {
-                  showNotification('ตั้งค่าสถานะ No Incentive สำเร็จ');
-              }
-          }
-      } catch (err) { handlePermissionError(err); showNotification(`Error: ${err.message}`, 'error'); }
-      setActiveLeaveCell(null);
-  };
-
-  const handleAddHoliday = async (d) => {
-      const ref = doc(db, 'artifacts', appId, 'public', 'data', 'holidays', d);
-      try {
-        if(holidays.includes(d)) await deleteDoc(ref);
-        else await setDoc(ref, { date: d });
-      } catch (err) { handlePermissionError(err); showNotification(`Error: ${err.message}`, 'error'); }
-  };
-
-  useEffect(() => {
-    const setFavicon = (url) => {
-      let link = document.querySelector("link[rel~='icon']");
-      if (!link) {
-        link = document.createElement('link');
-        link.rel = 'icon';
-        document.getElementsByTagName('head')[0].appendChild(link);
-      }
-      link.href = url;
-    };
-    setFavicon(LOGO_URL);
-  }, []);
-
-  useEffect(() => {
-    if (!auth) return;
-    const initAuth = async () => { 
-        try { await signInAnonymously(auth); } catch (err) { console.error("Auth Error", err); firebaseError = `Auth Failed: ${err.message}`; }
-    };
-    initAuth();
-    const unsubscribe = onAuthStateChanged(auth, (u) => { 
-        if (u) { setDbReady(true); setPermissionError(false); }
-    });
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (!dbReady || !db) return;
-    try {
-        const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'app_users');
-        const unsub = onSnapshot(colRef, async (snap) => { setAppUsers(snap.docs.map(d => ({ id: d.id, ...d.data() }))); }, handlePermissionError);
-        const unsubSettings = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'theme'), (docSnap) => { 
-            if(docSnap.exists() && docSnap.data().color) setThemeColor(docSnap.data().color); 
-        }, handlePermissionError);
-        return () => { unsub(); unsubSettings(); };
-    } catch (e) {}
-  }, [dbReady]);
-
+// ... existing code ...
   useEffect(() => {
     if (!dbReady || !currentUser || !db) { setLoading(false); return; }
     try {
         const unsubTeams = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), async (snap) => {
               const list = snap.docs.map(d => ({ ...d.data(), id: d.id })); setTeams(list);
         }, handlePermissionError);
+
+        const unsubMembers = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'members'), async (snap) => {
+              const list = snap.docs.map(d => ({ ...d.data(), id: d.id })); setAllMembers(list);
+        }, handlePermissionError);
+
         const unsubJobs = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'jobs'), (s) => setJobs(s.docs.map(d => ({ ...d.data(), id: d.id }))), handlePermissionError);
-        const unsubLeaves = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'leaves'), (s) => setLeaves(s.docs.map(d => ({ ...d.data(), id: d.id }))), handlePermissionError);
+// ... existing code ...
         const unsubHols = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'holidays'), (s) => setHolidays(s.docs.map(d => d.data().date)), handlePermissionError);
         const unsubPeriods = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'savedPeriods'), (s) => { setSavedPeriods(s.docs.map(d => ({ ...d.data(), id: d.id }))); setLoading(false); }, handlePermissionError);
-        return () => { unsubTeams(); unsubJobs(); unsubLeaves(); unsubHols(); unsubPeriods(); };
+        return () => { unsubTeams(); unsubMembers(); unsubJobs(); unsubLeaves(); unsubHols(); unsubPeriods(); };
     } catch (e) {}
   }, [dbReady, currentUser]);
 
-  useEffect(() => { localStorage.setItem(`pasaya_period_${appId}`, JSON.stringify(period)); }, [period]);
-  useEffect(() => {
-      const storedUser = localStorage.getItem('pasaya_app_user');
-      if (storedUser) { try { setCurrentUser(JSON.parse(storedUser)); } catch(e) {} }
-  }, []);
-  useEffect(() => { if (activeTab === 'admin' && currentUser?.role !== 'super_admin') setActiveTab('dashboard'); }, [activeTab, currentUser]);
-  useEffect(() => { function handleClickOutside(event) { if (leaveMenuRef.current && !leaveMenuRef.current.contains(event.target)) setActiveLeaveCell(null); } document.addEventListener("mousedown", handleClickOutside); return () => document.removeEventListener("mousedown", handleClickOutside); }, [leaveMenuRef]);
-
-  const handleSaveTheme = async (color) => { try { await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'theme'), { color }); showNotification('เปลี่ยนสีธีมสำเร็จ'); } catch (err) { handlePermissionError(err); } };
-
-  const handleLogin = async (e) => {
-      e.preventDefault();
-      const inputUser = usernameInput.trim();
-      const inputPass = passwordInput.trim();
-      if (inputUser === DEFAULT_SUPER_ADMIN.username && inputPass === DEFAULT_SUPER_ADMIN.password) {
-           const adminData = { username: inputUser, role: 'super_admin', name: 'Admin T58121' };
-           setCurrentUser(adminData);
-           localStorage.setItem('pasaya_app_user', JSON.stringify(adminData));
-           showNotification(`ยินดีต้อนรับ ${adminData.name}`);
-           setUsernameInput(''); setPasswordInput('');
-           if (db) {
-               try {
-                   const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'app_users'), where("username", "==", DEFAULT_SUPER_ADMIN.username));
-                   getDocs(q).then((snap) => { if (snap.empty) addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'app_users'), DEFAULT_SUPER_ADMIN); });
-               } catch (err) {}
-           }
-           return;
-      }
-      const dbUser = appUsers.find(u => u.username === inputUser && u.password === inputPass);
-      if (dbUser) {
-          const userData = { username: dbUser.username, role: dbUser.role, name: dbUser.name || dbUser.username };
-          setCurrentUser(userData);
-          localStorage.setItem('pasaya_app_user', JSON.stringify(userData));
-          showNotification(`ยินดีต้อนรับ ${userData.name}`);
-          setUsernameInput(''); setPasswordInput('');
-      } else { showNotification('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', 'error'); }
-  };
-
-  const handleLogout = () => { setCurrentUser(null); localStorage.removeItem('pasaya_app_user'); };
-
+// ... existing code ...
   const handleAddAppUser = async () => {
       if (!newUser.username || !newUser.password) return showNotification('กรุณากรอกข้อมูล', 'error');
       if (appUsers.some(u => u.username === newUser.username)) return showNotification('Username ซ้ำ', 'error');
@@ -358,20 +79,13 @@ export default function App() {
   };
 
   const handleRemoveAppUser = (id, username) => {
-      if (username === DEFAULT_SUPER_ADMIN.username || username === currentUser.username) return showNotification('ลบไม่ได้', 'error');
-      requestConfirm('ลบผู้ใช้งาน', `ยืนยันลบ ${username}?`, async () => {
-          try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'app_users', id)); setConfirmModal(null); showNotification('ลบสำเร็จ'); } catch(e) { handlePermissionError(e); }
-      });
-  };
-
+// ... existing code ...
   const handleCleanGhostData = async () => {
       requestConfirm('ล้างข้อมูลช่างตกค้าง', 'ระบบจะค้นหาและลบรายชื่อช่างที่ถูกลบไปแล้วแต่ยังค้างอยู่ในงาน ยืนยันหรือไม่?', async () => {
           try {
               const batch = writeBatch(db);
               let cleanedCount = 0;
-              const validMemberIds = new Set();
-              
-              teams.forEach(t => (t.members || []).forEach(m => validMemberIds.add(m.id)));
+              const validMemberIds = new Set(allMembers.map(m => m.id));
 
               jobs.forEach(job => {
                   const originalTechs = job.selectedTechs || [];
@@ -379,140 +93,141 @@ export default function App() {
                   
                   if (validTechs.length !== originalTechs.length) {
                       const jobRef = doc(db, 'artifacts', appId, 'public', 'data', 'jobs', job.id);
-                      batch.update(jobRef, { selectedTechs: validTechs });
-                      cleanedCount++;
-                  }
-              });
-
-              if (cleanedCount > 0) {
-                  await batch.commit();
-                  showNotification(`เคลียร์รายชื่อค้างใน ${cleanedCount} งานเรียบร้อยแล้ว`, 'success');
-              } else {
-                  showNotification('ไม่พบรายชื่อช่างตกค้างในระบบ', 'success');
-              }
+// ... existing code ...
               setConfirmModal(null);
           } catch (e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
       });
   };
 
+  // --- Seed Data Handler (RESTORED) ---
+  const handleSeedData = async () => { 
+      requestConfirm('กู้คืนข้อมูลเริ่มต้น', 'ยืนยันการล้างข้อมูลทีมและช่างทั้งหมดเพื่อเริ่มใหม่?', async () => { 
+          try {
+              // ล้างข้อมูลสมาชิกเก่า
+              const membersSnap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'members'));
+              const batch = writeBatch(db); 
+              membersSnap.forEach(d => batch.delete(d.ref));
+              
+              // ล้างข้อมูลทีมเก่า
+              const teamsSnap = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'teams'));
+              teamsSnap.forEach(d => batch.delete(d.ref));
+              
+              await batch.commit(); 
+
+              // สร้างข้อมูลใหม่ตามโครงสร้าง V7
+              const seedTeams = [
+                  { name: 'ทีมช่างนาย', members: [{name: 'ช่างนาย', joinDate: '2024-01-01'}, {name: 'ช่างอาท', joinDate: '2024-01-01'}, {name: 'ช่างลิด', joinDate: '2024-01-01'}] },
+                  { name: 'ทีมช่างเบนซ์', members: [{name: 'ช่างเบนซ์', joinDate: '2024-01-01'}, {name: 'ช่างกี้', joinDate: '2024-01-01'}] },
+                  { name: 'ทีมช่างอั้ม', members: [{name: 'ช่างอั้ม', joinDate: '2024-01-01'}, {name: 'ช่างต้อม', joinDate: '2024-01-01'}, {name: 'ช่างทัด', joinDate: '2024-01-01'}] },
+                  { name: 'ทีมตัววิ่ง', members: [{name: 'ช่างเวียร์', joinDate: '2024-01-01'}] },
+                  { name: 'ทีมวัดพื้นที่', members: [] },
+              ];
+
+              for (const teamData of seedTeams) {
+                  const teamRef = await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), { name: teamData.name, createdAt: new Date().toISOString() });
+                  
+                  for (const m of teamData.members) {
+                      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'members'), {
+                          name: m.name,
+                          joinDate: m.joinDate,
+                          resignDate: '',
+                          currentTeamId: teamRef.id,
+                          teamHistory: [{ teamId: teamRef.id, effectiveDate: m.joinDate }],
+                          createdAt: new Date().toISOString()
+                      });
+                  }
+              }
+              setConfirmModal(null); 
+              showNotification('กู้คืนข้อมูลสำเร็จ ระบบจะแสดงข้อมูลใหม่ในสักครู่');
+          } catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
+      }); 
+  };
+
   const handleAddTeam = async () => { 
       if(!newTeamName) return;
-      try { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), { name: newTeamName, members: [] }); setIsAddingTeam(false); showNotification('เพิ่มสำเร็จ'); } catch(e) { handlePermissionError(e); }
+      try { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'teams'), { name: newTeamName, createdAt: new Date().toISOString() }); setIsAddingTeam(false); showNotification('เพิ่มสำเร็จ'); } catch(e) { handlePermissionError(e); }
   };
 
   const handleDeleteTeam = (id) => requestConfirm('ลบทีม', 'ยืนยัน?', async () => { 
       try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', id)); setConfirmModal(null); } catch(e) { handlePermissionError(e); }
   });
 
-  const handleAddMember = async (tid) => { 
-      const t = teams.find(x => x.id === tid); 
-      if(t && newMember.name) { 
+  const handleAddMember = async (teamId) => { 
+      if(newMember.name) { 
           try {
-              const upd = [...(t.members||[]), { id: `m${Date.now()}`, ...newMember }]; 
-              await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', tid), { members: upd }); 
-              setAddingMemberTo(null); setNewMember({ name: '', joinDate: '', resignDate: '' }); showNotification('เพิ่มสมาชิกสำเร็จ');
+              const memberData = {
+                  name: newMember.name,
+                  joinDate: newMember.joinDate || new Date().toISOString().split('T')[0],
+                  resignDate: newMember.resignDate || '',
+                  currentTeamId: teamId,
+                  teamHistory: [
+                      { teamId: teamId, effectiveDate: newMember.joinDate || new Date().toISOString().split('T')[0] }
+                  ],
+                  createdAt: new Date().toISOString()
+              };
+              await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'members'), memberData); 
+              setAddingMemberTo(null); setNewMember({ name: '', joinDate: '', resignDate: '' }); showNotification('เพิ่มช่างสำเร็จ');
           } catch(e) { handlePermissionError(e); }
       } 
   };
   
   const handleUpdateMember = async () => {
       if (!editingMember) return;
-      const { teamId, memberId, data } = editingMember;
-      const team = teams.find(t => t.id === teamId);
-      if (team) {
-          try {
-              const updatedMembers = team.members.map(m => m.id === memberId ? { ...m, ...data } : m);
-              await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', teamId), { members: updatedMembers });
-              setEditingMember(null); showNotification('อัปเดตสำเร็จ');
-          } catch(e) { handlePermissionError(e); }
-      }
+      try {
+          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'members', editingMember.id), {
+              name: editingMember.name,
+              joinDate: editingMember.joinDate,
+              resignDate: editingMember.resignDate
+          });
+          setEditingMember(null); showNotification('อัปเดตข้อมูลช่างสำเร็จ');
+      } catch(e) { handlePermissionError(e); }
   };
   
-  const handleDeleteMember = (tid, mid) => requestConfirm('ลบสมาชิก', 'ยืนยัน?', async () => { 
-      const t = teams.find(x => x.id === tid); 
-      try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', tid), { members: t.members.filter(m => m.id !== mid) }); setConfirmModal(null); showNotification('ลบสำเร็จ'); } catch(e) { handlePermissionError(e); }
+  const handleDeleteMember = (memberId) => requestConfirm('ลบช่าง', 'ยืนยันลบช่างคนนี้ออกจากระบบถาวร?', async () => { 
+      try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'members', memberId)); setConfirmModal(null); showNotification('ลบช่างสำเร็จ'); } catch(e) { handlePermissionError(e); }
   });
 
-  const handleConfirmTransfer = async () => {
-      const { teamId, member, targetTeamId, date } = transferringMember;
-      if (!targetTeamId || !date) return showNotification('กรุณาเลือกทีมปลายทางและวันที่', 'error');
+  const confirmMigration = async () => {
+      if (!transferringMember || !transferringMember.targetTeamId || !transferringMember.date) return;
+      const member = allMembers.find(m => m.id === transferringMember.member.id);
+      if (!member) return;
 
-      const sourceTeam = teams.find(t => t.id === teamId);
-      const targetTeam = teams.find(t => t.id === targetTeamId);
+      try {
+          const newHistory = [...(member.teamHistory || [])];
+          newHistory.push({
+              teamId: transferringMember.targetTeamId,
+              effectiveDate: transferringMember.date
+          });
+          
+          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'members', member.id), {
+              currentTeamId: transferringMember.targetTeamId,
+              teamHistory: newHistory
+          });
+          
+          setTransferringMember(null);
+          showNotification('ย้ายทีมสำเร็จ (มีผลตามวันที่กำหนด)');
+      } catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
+  };
 
-      if (sourceTeam && targetTeam) {
-          try {
-              const updatedSourceMembers = sourceTeam.members.map(m => m.id === member.id ? { ...m, resignDate: date } : m);
-              const newMemberRecord = { id: `m${Date.now()}`, name: member.name, joinDate: date, resignDate: '' };
-              const updatedTargetMembers = [...(targetTeam.members || []), newMemberRecord];
-
-              await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', teamId), { members: updatedSourceMembers });
-              await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'teams', targetTeamId), { members: updatedTargetMembers });
-              
-              setTransferringMember(null);
-              showNotification('ย้ายทีมพร้อมบันทึกประวัติสำเร็จ');
-          } catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
+  const removeMigrationHistory = async (memberId, historyIndex) => {
+      const member = allMembers.find(m => m.id === memberId);
+      if (!member || !member.teamHistory || member.teamHistory.length <= 1) {
+          showNotification('ต้องมีประวัติอย่างน้อย 1 รายการเสมอ', 'error'); return;
       }
+      try {
+          const newHistory = [...member.teamHistory];
+          newHistory.splice(historyIndex, 1);
+          const sorted = [...newHistory].sort((a,b) => b.effectiveDate.localeCompare(a.effectiveDate));
+          await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'members', memberId), {
+              currentTeamId: sorted[0].teamId,
+              teamHistory: newHistory
+          });
+          showNotification('ลบประวัติการย้ายทีมสำเร็จ');
+      } catch(e) { handlePermissionError(e); showNotification(`Error: ${e.message}`, 'error'); }
   };
   
   const initiateAddJob = () => { 
-      const today = new Date().toISOString().split('T')[0]; 
-      setNewJobDate((today >= period.start && today <= period.end) ? today : period.start); 
-      setNewJobTimeSlot(DEFAULT_TIME_SLOT); setShowAddJobModal(true); 
-  };
-  
-  const confirmAddJob = async () => { 
-      if (!newJobDate) return; 
-      try {
-          await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'jobs'), { 
-              date: newJobDate, customer: '', location: '', orderNo: '', timeSlot: newJobTimeSlot, type: 'install', rails: 0, selectedTechs: [], createdAt: new Date().toISOString(), orderIndex: Date.now(), isChecked: false
-          }); 
-          setShowAddJobModal(false); showNotification('เพิ่มงานสำเร็จ');
-      } catch(e) { handlePermissionError(e); }
-  };
-
-  const updateJob = async (id, f, v) => { try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', id), { [f]: v }); } catch(e) {} };
-  const removeJob = async (id) => { try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', id)); } catch(e) {} };
-  const moveJob = async (id, dir, list) => { 
-      const idx = list.findIndex(j => j.id === id); if(idx === -1 || idx+dir < 0 || idx+dir >= list.length) return; 
-      const j1 = list[idx], j2 = list[idx+dir]; let o1 = j1.orderIndex || Date.now(), o2 = j2.orderIndex || (Date.now()-1000); if(o1 === o2) o1 += 1; 
-      try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', j1.id), { orderIndex: o2 }); await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', j2.id), { orderIndex: o1 }); } catch(e) {}
-  };
-
-  const toggleTech = async (jid, tid) => { 
-      const j = jobs.find(x => x.id === jid); const sel = j.selectedTechs || []; 
-      try { await updateJob(jid, 'selectedTechs', sel.includes(tid) ? sel.filter(x => x!==tid) : [...sel, tid]); } catch(e) {}
-  };
-
-  const toggleJobCheck = async (id, currentStatus) => { try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'jobs', id), { isChecked: !currentStatus }); } catch(e) {} };
-
-  const handleSavePeriod = async () => { 
-      if(newPeriodName) { try { const { id, ...cleanPeriodData } = period; await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'savedPeriods'), { ...cleanPeriodData, name: newPeriodName }); setNewPeriodName(''); setShowPeriodManager(false); showNotification('บันทึกรอบสำเร็จ'); } catch(e) {} } 
-  };
-  
-  const handleDeletePeriod = (id) => { setShowPeriodManager(false); requestConfirm('ลบรอบบันทึก', 'ยืนยันการลบ?', async () => { try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'savedPeriods', id)); setConfirmModal(null); showNotification('ลบสำเร็จ'); } catch(e) {} }); };
-  const handleUpdatePeriod = async () => { if (!editingPeriod || !editingPeriod.name) return; try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'savedPeriods', editingPeriod.id), { name: editingPeriod.name, start: editingPeriod.start, end: editingPeriod.end }); setEditingPeriod(null); showNotification('อัปเดตสำเร็จ'); } catch(e) {} };
-
-  // --- CALCULATION LOGIC (Single Source of Truth) ---
-  const calculatedData = useMemo(() => {
-    try {
-        const periodJobs = jobs.filter(j => j.date >= period.start && j.date <= period.end);
-        
-        // Sorting Jobs
-        periodJobs.sort((a, b) => {
-            const dateA = a.date || ''; const dateB = b.date || '';
-            const timeA = a.timeSlot || ''; const timeB = b.timeSlot || '';
-            if (jobSortOrder === 'desc') {
-                const dateDiff = dateB.localeCompare(dateA);
-                if (dateDiff !== 0) return dateDiff;
-                return timeB.localeCompare(timeA);
-            } else {
-                const dateDiff = dateA.localeCompare(dateB);
-                if (dateDiff !== 0) return dateDiff;
-                return timeA.localeCompare(timeB);
-            }
-        });
-        
+// ... existing code ...
         const dailyTeamIncentive = {}; 
         let globalTotalRails = 0; let globalTotalMeasureJobs = 0;
 
@@ -524,12 +239,10 @@ export default function App() {
             if (!excludedTypes.includes(job.type)) globalTotalRails += rails;
             if (job.type === 'measure') globalTotalMeasureJobs += 1;
 
-            // ⚡️ FILTER 1: นับเฉพาะช่างที่มีตัวตนอยู่ในทีมใดๆ ณ ปัจจุบันเท่านั้น
-            const validTechs = (job.selectedTechs || []).filter(tid => 
-                teams.some(t => (t.members || []).some(m => m.id === tid))
-            );
+            // ⚡️ FILTER 1: นับเฉพาะช่างที่มีตัวตนในปัจจุบัน
+            const validTechs = (job.selectedTechs || []).filter(tid => allMembers.some(m => m.id === tid));
             
-            // ⚡️ FILTER 2: กรองคนที่ไม่ได้ติดสถานะ no_inc (No Incentive) เพื่อเอามาคำนวณเงิน 250
+            // ⚡️ FILTER 2: กรองคนที่ไม่ได้ติดสถานะ no_inc
             const payingTechs = validTechs.filter(tid => {
                 const l = leaves.find(x => x.techId === tid && x.date === job.date);
                 return !(l && l.type === 'no_inc');
@@ -537,7 +250,6 @@ export default function App() {
 
             const cnt = payingTechs.length; 
 
-            // หากไม่มีช่างที่มีสิทธิ์รับเงินเลย ยอดงานนี้จะเป็น 0 บาท
             if (cnt === 0) {
                 val = 0;
             } else {
@@ -547,83 +259,95 @@ export default function App() {
             }
             job.calculatedValue = val; 
 
-            // แจกจ่ายเงินให้กับ "ทีม" ที่ส่ง payingTechs มาเท่านั้น
             if (cnt > 0) {
                 const teamsInvolved = {}; let totalTechsInJob = 0;
                 payingTechs.forEach(tid => {
-                    const t = teams.find(x => (x.members||[]).some(m => m.id === tid));
-                    if (t) { teamsInvolved[t.id] = (teamsInvolved[t.id] || 0) + 1; totalTechsInJob++; }
+                    const member = allMembers.find(m => m.id === tid);
+                    if(member){
+                        const t = teams.find(x => isMemberInTeamOnDate(member, x.id, job.date));
+                        if (t) { teamsInvolved[t.id] = (teamsInvolved[t.id] || 0) + 1; totalTechsInJob++; }
+                    }
                 });
                 
                 const date = job.date;
                 if (!dailyTeamIncentive[date]) dailyTeamIncentive[date] = {};
 
                 Object.keys(teamsInvolved).forEach(teamId => {
-                    const teamTechCount = teamsInvolved[teamId];
-                    const teamShare = (val * teamTechCount) / totalTechsInJob;
-                    if (!dailyTeamIncentive[date][teamId]) dailyTeamIncentive[date][teamId] = { amount: 0, rails: 0, measures: 0 };
-                    dailyTeamIncentive[date][teamId].amount += teamShare;
-
-                    const totalTeams = Object.keys(teamsInvolved).length;
-                    if (!excludedTypes.includes(job.type)) dailyTeamIncentive[date][teamId].rails += (rails / totalTeams);
-                    if (job.type === 'measure') dailyTeamIncentive[date][teamId].measures += 1; 
-                });
-            }
-        });
-
+// ... existing code ...
         const daysInPeriod = getDaysArray(period.start, period.end);
         const periodWorkingDays = daysInPeriod.filter(d => !holidays.includes(d)).length;
         
         const reportTeamLogs = {}; const reportTechLogs = {};
-        teams.forEach(t => {
-            reportTeamLogs[t.id] = { name: t.name, rows: [] };
-            (t.members || []).forEach(m => { reportTechLogs[m.id] = { name: m.name, teamName: t.name, rows: [] }; });
-        });
+        teams.forEach(t => { reportTeamLogs[t.id] = { name: t.name, rows: [] }; });
+        allMembers.forEach(m => { reportTechLogs[m.id] = { name: m.name, teamName: teams.find(t=>t.id===m.currentTeamId)?.name || '-', rows: [] }; });
 
-        const teamStats = teams.map(team => {
-            const membersList = team.members || [];
-            const memberEarnings = {}; const memberLeavesList = {};
-            membersList.forEach(m => { memberEarnings[m.id] = 0; memberLeavesList[m.id] = []; });
-            
-            let teamTotalEarned = 0; let teamTotalRails = 0; let teamTotalMeasures = 0;
-            
-            daysInPeriod.forEach(day => {
+        const teamStatsMap = {};
+        teams.forEach(t => teamStatsMap[t.id] = { ...t, totalEarned: 0, totalRails: 0, totalMeasures: 0, membersMap: {} });
+        allMembers.forEach(m => {
+            const fallbackTeam = m.currentTeamId || teams[0]?.id;
+            if (teamStatsMap[fallbackTeam]) {
+                teamStatsMap[fallbackTeam].membersMap[m.id] = { ...m, incentive: 0, workDays: 0, leaves: [] };
+            }
+        });
+        
+        const memberEarnings = {};
+        allMembers.forEach(m => memberEarnings[m.id] = 0);
+
+        daysInPeriod.forEach(day => {
+            const isHol = holidays.includes(day);
+            const dayTeamMembers = {};
+            teams.forEach(t => dayTeamMembers[t.id] = []);
+
+            allMembers.forEach(m => {
+                const activeTeam = teams.find(t => isMemberInTeamOnDate(m, t.id, day));
+                if (activeTeam) { dayTeamMembers[activeTeam.id].push(m); }
+                
+                if (!isHol) {
+                    const leave = leaves.find(l => l.techId === m.id && l.date === day);
+                    if (leave) {
+                        const currentTeamStat = teamStatsMap[activeTeam?.id || m.currentTeamId];
+                        if (currentTeamStat && currentTeamStat.membersMap[m.id]) {
+                            currentTeamStat.membersMap[m.id].leaves.push({ date: day, type: leave.type });
+                        }
+                        const lName = LEAVE_TYPES.find(x => x.id === leave.type)?.label || 'ลา';
+                        if (leave.type === 'no_inc') {
+                            reportTechLogs[m.id].rows.push({ isLeave: true, date: day, time: '-', type: '-', customer: `สถานะ: ${lName}`, location: '-', rails: '-', techs: '-', note: '-', inc: '-', effectiveTeamName: activeTeam?.name || '-' });
+                        } else {
+                            reportTechLogs[m.id].rows.push({ isLeave: true, date: day, time: '-', type: '-', customer: `ลา (${lName})`, location: '-', rails: '-', techs: '-', note: '-', inc: '-', effectiveTeamName: activeTeam?.name || '-' });
+                        }
+                    } else {
+                        if (m.joinDate <= day && (!m.resignDate || m.resignDate > day)) {
+                             const currentTeamStat = teamStatsMap[activeTeam?.id || m.currentTeamId];
+                             if (currentTeamStat && currentTeamStat.membersMap[m.id]) {
+                                 currentTeamStat.membersMap[m.id].workDays++;
+                             }
+                        }
+                    }
+                }
+            });
+
+            teams.forEach(team => {
+                const membersList = dayTeamMembers[team.id] || [];
                 const dayStats = dailyTeamIncentive[day]?.[team.id];
-                const isHol = holidays.includes(day);
 
                 if (isHol) {
                     reportTeamLogs[team.id].rows.push({ isHoliday: true, date: day, time: '-', type: '-', customer: 'วันหยุดบริษัท', location: '-', rails: '-', techs: '-', note: '-', inc: '-' });
-                    membersList.forEach(m => { reportTechLogs[m.id].rows.push({ isHoliday: true, date: day, time: '-', type: '-', customer: 'วันหยุดบริษัท', location: '-', rails: '-', techs: '-', note: '-', inc: '-' }); });
-                } else {
-                    membersList.forEach(m => {
-                        const leave = leaves.find(l => l.techId === m.id && l.date === day);
-                        if (leave) {
-                            memberLeavesList[m.id].push({ date: day, type: leave.type });
-                            const lName = LEAVE_TYPES.find(x => x.id === leave.type)?.label || 'ลา';
-                            
-                            // ถ้าเป็น no_inc ไม่นับเป็นวันลา แต่บันทึกเป็น Status การทำงาน
-                            if (leave.type === 'no_inc') {
-                                reportTechLogs[m.id].rows.push({ isLeave: true, date: day, time: '-', type: '-', customer: `สถานะ: ${lName}`, location: '-', rails: '-', techs: '-', note: '-', inc: '-' });
-                            } else {
-                                reportTechLogs[m.id].rows.push({ isLeave: true, date: day, time: '-', type: '-', customer: `ลา (${lName})`, location: '-', rails: '-', techs: '-', note: '-', inc: '-' });
-                            }
-                        }
-                    });
+                    membersList.forEach(m => { reportTechLogs[m.id].rows.push({ isHoliday: true, date: day, time: '-', type: '-', customer: 'วันหยุดบริษัท', location: '-', rails: '-', techs: '-', note: '-', inc: '-', effectiveTeamName: team.name }); });
                 }
 
                 const dayJobs = periodJobs.filter(j => j.date === day).sort((a,b) => (a.timeSlot||'').localeCompare(b.timeSlot||''));
                 dayJobs.forEach(job => {
                     const involvedTeams = {};
                     
-                    // นับเฉพาะช่างที่ยังเป็นคนทำงานจริง ไม่รวมผี
-                    const validTechsInJob = (job.selectedTechs || []).filter(tid => 
-                        teams.some(t => (t.members || []).some(m => m.id === tid))
-                    );
-                    const totalTechsInJob = validTechsInJob.length; // อันนี้คือนับหัวรวมทั้งหมดในงาน
+                    const validTechsInJob = (job.selectedTechs || []).filter(tid => allMembers.some(m => m.id === tid));
+                    const totalTechsInJob = validTechsInJob.length; 
                     
                     validTechsInJob.forEach(tid => {
-                        const tMatch = teams.find(x => (x.members||[]).some(m => m.id === tid));
-                        if (tMatch) { if (!involvedTeams[tMatch.id]) involvedTeams[tMatch.id] = []; involvedTeams[tMatch.id].push(tid); }
+                        const member = allMembers.find(x => x.id === tid);
+                        if(member){
+                            const tMatch = teams.find(x => isMemberInTeamOnDate(member, x.id, day));
+                            if (tMatch) { if (!involvedTeams[tMatch.id]) involvedTeams[tMatch.id] = []; involvedTeams[tMatch.id].push(tid); }
+                        }
                     });
 
                     const totalTeams = Object.keys(involvedTeams).length;
@@ -637,7 +361,6 @@ export default function App() {
                         const jobVal = job.calculatedValue || 0;
                         const jobRails = parseInt(job.rails) || 0;
                         
-                        // เงินของทีมได้มาจากสัดส่วนของคนที่มีสิทธิ์ (ที่ผ่านการกรองจาก filter 2 ด้านบนแล้ว)
                         const teamShareAmt = totalTechsInJob > 0 ? (jobVal * teamTechCount) / totalTechsInJob : 0;
                         const teamRailsShare = isExcluded ? 0 : (jobRails / totalTeams);
                         const typeLabel = JOB_TYPES.find(t=>t.id===job.type)?.label || job.type;
@@ -645,10 +368,8 @@ export default function App() {
 
                         reportTeamLogs[team.id].rows.push({ date: job.date, time: job.timeSlot || '-', type: typeLabel, customer: job.customer || '-', location: job.location || '-', rails: isExcluded ? '-' : Number(teamRailsShare.toFixed(2)), techs: teamTechCount, note: noteStr, inc: teamShareAmt });
 
-                        // คำนวณรายหัว
                         const activeMembers = membersList.filter(m => m.joinDate <= day && (!m.resignDate || m.resignDate > day));
                         
-                        // คนที่มีสิทธิ์รับเงิน = ไม่ลา และไม่ได้เป็น no_inc
                         const eligibleMembers = activeMembers.filter(m => {
                             const leave = leaves.find(l => l.techId === m.id && l.date === day);
                             return !leave || leave.type === 'vacation';
@@ -665,17 +386,17 @@ export default function App() {
                             if (isNoInc) noteDisplay = noteStr ? `${noteStr} (No Incentive)` : 'No Incentive';
 
                             reportTechLogs[m.id].rows.push({
-                                date: job.date, time: job.timeSlot || '-', type: typeLabel, customer: job.customer || '-', location: job.location || '-', rails: isExcluded ? '-' : (isEligible ? Number(railsPerHead.toFixed(2)) : 0), techs: teamTechCount, note: noteDisplay, inc: isEligible ? sharePerHead : 0
+                                date: job.date, time: job.timeSlot || '-', type: typeLabel, customer: job.customer || '-', location: job.location || '-', rails: isExcluded ? '-' : (isEligible ? Number(railsPerHead.toFixed(2)) : 0), techs: teamTechCount, note: noteDisplay, inc: isEligible ? sharePerHead : 0, effectiveTeamName: team.name
                             });
                         });
                     }
                 });
 
                 if (dayStats) { 
-                    teamTotalRails += dayStats.rails; teamTotalMeasures += dayStats.measures; 
+                    teamStatsMap[team.id].totalRails += dayStats.rails; teamStatsMap[team.id].totalMeasures += dayStats.measures; 
                     const dailyPot = dayStats.amount || 0;
                     if (dailyPot > 0) {
-                        teamTotalEarned += dailyPot;
+                        teamStatsMap[team.id].totalEarned += dailyPot;
                         const activeMembers = membersList.filter(m => m.joinDate <= day && (!m.resignDate || m.resignDate > day));
                         const eligibleMembers = activeMembers.filter(m => {
                             const leave = leaves.find(l => l.techId === m.id && l.date === day);
@@ -686,136 +407,69 @@ export default function App() {
                     }
                 }
             });
+        });
 
-            return { 
-                ...team, totalEarned: teamTotalEarned, totalRails: teamTotalRails, totalMeasures: teamTotalMeasures,
-                members: membersList.map(m => ({ 
-                    ...m, incentive: memberEarnings[m.id],
-                    // เปลี่ยนการเช็ค workDays ให้คนที่สถานะ no_inc (มาทำงานแต่ไม่ได้เงิน) ยังถูกนับเป็น 1 วันทำงาน
-                    workDays: daysInPeriod.filter(d => 
-                        !holidays.includes(d) && 
-                        m.joinDate <= d && 
-                        (!m.resignDate || m.resignDate > d) && 
-                        !leaves.find(l => l.techId === m.id && l.date === d && l.type !== 'no_inc')
-                    ).length,
-                    leaves: memberLeavesList[m.id]
-                })) 
+        let exactTotalIncentive = 0;
+        const teamStats = teams.map(t => {
+            exactTotalIncentive += teamStatsMap[t.id].totalEarned;
+            return {
+                ...t,
+                totalEarned: teamStatsMap[t.id].totalEarned,
+                totalRails: teamStatsMap[t.id].totalRails,
+                totalMeasures: teamStatsMap[t.id].totalMeasures,
+                members: Object.values(teamStatsMap[t.id].membersMap).map(m => ({
+                    ...m,
+                    incentive: memberEarnings[m.id] || 0
+                }))
             };
         });
-        
-        const exactTotalIncentive = teamStats.reduce((sum, t) => sum + t.totalEarned, 0);
-        const individualStats = teamStats.flatMap(t => (t.members || []).map(m => ({...m, teamName: t.name}))).sort((a,b) => b.incentive - a.incentive);
-        const totalTechs = teamStats.reduce((acc, t) => acc + (t.members || []).length, 0);
+
+        const individualStats = allMembers.map(m => {
+            const currentTeamName = teams.find(t => t.id === m.currentTeamId)?.name || 'ไม่มีทีม';
+            const workDays = teamStatsMap[m.currentTeamId]?.membersMap[m.id]?.workDays || 0;
+            return {
+                ...m,
+                teamName: currentTeamName,
+                workDays: workDays,
+                incentive: memberEarnings[m.id] || 0
+            }
+        }).sort((a,b) => b.incentive - a.incentive);
+
+        const totalTechs = allMembers.filter(m => m.joinDate <= period.end && (!m.resignDate || m.resignDate > period.start)).length;
 
         return { periodJobs, totalIncentive: Math.round(exactTotalIncentive), teamStats, individualStats, totalTechs, periodWorkingDays, totalRails: globalTotalRails, totalMeasureJobs: globalTotalMeasureJobs, reportTeamLogs, reportTechLogs };
     } catch (e) { return { periodJobs: [], totalIncentive: 0, teamStats: [], individualStats: [], totalTechs: 0, periodWorkingDays: 0, totalRails: 0, totalMeasureJobs: 0, reportTeamLogs: {}, reportTechLogs: {} }; }
-  }, [jobs, teams, holidays, leaves, period, jobSortOrder]);
+  }, [jobs, teams, allMembers, holidays, leaves, period, jobSortOrder]);
 
   const exportToCSV = () => {
       const headers = ["วันที่", "ลูกค้า", "สถานที่", "Order No", "เวลา", "ประเภทงาน", "จำนวนราง", "ทีมช่าง", "รายชื่อช่าง", "ตรวจสอบ", "ค่า Incentive"];
       const rows = calculatedData.periodJobs.map(j => {
-          const validTechs = (j.selectedTechs || []).filter(tid => teams.some(t => (t.members || []).some(m => m.id === tid)));
-          const tNames = teams.flatMap(t => t.members || []).filter(m => validTechs.includes(m.id)).map(m => m.name).join(", ");
+          const tNames = allMembers.filter(m => (j.selectedTechs || []).includes(m.id)).map(m => {
+              const activeTeam = teams.find(t => isMemberInTeamOnDate(m, t.id, j.date));
+              return `${m.name} (${activeTeam ? activeTeam.name : 'Unknown'})`;
+          }).join(", ");
           return [ j.date, `"${(j.customer||'').replace(/"/g,'""')}"`, `"${(j.location||'').replace(/"/g,'""')}"`, `"${(j.orderNo||'').replace(/"/g,'""')}"`, j.timeSlot || `${j.timeIn || ''} - ${j.timeOut || ''}`, JOB_TYPES.find(t => t.id === j.type)?.label || j.type, j.rails, `"${tNames}"`, j.isChecked ? 'ตรวจแล้ว' : 'ยังไม่ตรวจ', j.calculatedValue ].join(",");
       });
       const blob = new Blob(["\uFEFF" + [headers.join(","), ...rows].join("\n")], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `report.csv`; document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
-
-  if (!currentUser) return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-4">
-           {notification && <div className="fixed top-4 bg-red-500 text-white px-4 py-2 rounded shadow">{notification.message}</div>}
-           <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md text-center">
-               <div className="mb-6 flex justify-center"><div className="w-32 h-32 border-4 border-black flex items-center justify-center p-2 bg-white"><img src={LOGO_URL} alt="PASAYA Logo" className="h-24 w-auto object-contain" /></div></div>
-               <h2 className="text-xl font-bold text-gray-800 mb-6">Incentive Calculator System</h2>
-               <form onSubmit={handleLogin} className="space-y-4 text-left">
-                   <div><label className="text-xs font-bold text-gray-600 block mb-1">Username</label><div className="relative"><input type="text" required placeholder="Username" className="w-full border rounded-lg px-4 py-2 pl-10" value={usernameInput} onChange={e => setUsernameInput(e.target.value)}/><Users className="absolute left-3 top-2.5 text-gray-400" size={16}/></div></div>
-                   <div><label className="text-xs font-bold text-gray-600 block mb-1">Password</label><div className="relative"><input type="password" required placeholder="Password" className="w-full border rounded-lg px-4 py-2 pl-10" value={passwordInput} onChange={e => setPasswordInput(e.target.value)}/><Key className="absolute left-3 top-2.5 text-gray-400" size={16}/></div></div>
-                   <button type="submit" style={{backgroundColor: themeColor, color: themeTextColor}} className="w-full font-bold py-2 rounded-lg hover:opacity-90 flex items-center justify-center gap-2">เข้าสู่ระบบ <ArrowUp className="rotate-90" size={16}/></button>
-               </form>
-           </div>
-      </div>
-  );
-
-  // ⚡️ PRINT STYLES FIXED FOR REPEATING HEADERS
-  const printStyles = `
-  @media print { 
-      @page { size: A4; margin: 1cm; } 
-      body, html, #root { background: white !important; height: auto !important; overflow: visible !important; } 
-      .no-print { display: none !important; } 
-      .print-only-block { display: block !important; } 
-      tr.print-only-row { display: table-row !important; } 
-      table { width: 100% !important; border-collapse: collapse !important; } 
-      th, td { padding: 4px !important; border: 1px solid #ccc !important; } 
-      thead { display: table-header-group; } 
-      tfoot { display: table-footer-group; } 
-      tr { page-break-inside: avoid; } 
-      .no-border-print { border: none !important; }
-  } 
-  .print-only-block, .print-only-row { display: none; }
-  `;
-
-  return (
-    <div className="min-h-screen bg-white text-sm font-sans text-gray-800 pb-20 relative">
-      <style>{printStyles}</style>
-      {notification && <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg text-white flex items-center gap-2 ${notification.type === 'error' ? 'bg-red-500' : 'bg-green-600'} no-print`}>{notification.type === 'error' ? <AlertCircle size={20}/> : <CheckCircle size={20}/>}<span>{notification.message}</span></div>}
-      {confirmModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 no-print"><div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6"><h3 className="text-lg font-bold mb-2">{confirmModal.title}</h3><p className="text-gray-600 mb-6">{confirmModal.message}</p><div className="flex gap-3 justify-end"><button onClick={()=>setConfirmModal(null)} className="px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button><button onClick={confirmModal.onConfirm} className="px-4 py-2 bg-red-600 text-white rounded-lg">ยืนยัน</button></div></div></div>}
-      {showAddJobModal && <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4 no-print"><div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6"><h3 className="text-lg font-bold mb-4">เพิ่มงานใหม่</h3><div className="space-y-4"><div className="space-y-1"><label className="block text-xs font-bold text-gray-500">เลือกวันที่:</label><input type="date" className="w-full border rounded p-2 text-lg font-bold" value={newJobDate} onChange={e=>setNewJobDate(e.target.value)}/></div><div className="space-y-1"><label className="block text-xs font-bold text-gray-500">เลือกเวลา:</label><select className="w-full border rounded p-2 text-lg font-bold" value={newJobTimeSlot} onChange={e=>setNewJobTimeSlot(e.target.value)}>{TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}</select></div></div><div className="flex gap-3 justify-end mt-6"><button onClick={()=>setShowAddJobModal(false)} className="px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button><button onClick={confirmAddJob} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-4 py-2 rounded-lg hover:opacity-90">ตกลง</button></div></div></div>}
-      {activeLeaveCell && (<div ref={leaveMenuRef} className="absolute bg-white shadow-xl border rounded-lg p-1 z-[999] min-w-[120px] no-print" style={{ top: activeLeaveCell.top, left: activeLeaveCell.left }}>{LEAVE_TYPES.map(type => (<button key={type.id} onClick={() => selectLeaveType(type.id)} className={`w-full text-left px-3 py-2 text-xs hover:bg-gray-50 rounded flex items-center gap-2 ${type.color.replace('bg-', 'text-')}`}><span className={`w-4 h-4 flex items-center justify-center rounded-full text-[9px] ${type.color}`}>{type.short}</span>{type.label}</button>))}<div className="h-px bg-gray-100 my-1"></div><button onClick={() => selectLeaveType('clear')} className="w-full text-left px-3 py-2 text-xs text-red-500 hover:bg-red-50 rounded">ยกเลิกสถานะ</button></div>)}
-
-      <div className="bg-white border-b sticky top-0 z-50 no-print">
-        <div className="max-w-7xl mx-auto px-4 py-3">
-          <div className="flex justify-between items-center mb-4">
-             <div className="flex items-center gap-4"><img src={LOGO_URL} alt="PASAYA Logo" className="h-10 w-auto object-contain" /><div className="h-8 w-px bg-gray-300"></div><div><h2 className="font-bold text-gray-700">Incentive Calculator</h2><div className="flex items-center gap-2 text-xs text-gray-500"><Users size={10}/> User: {currentUser.name}</div></div></div>
-             <div className="flex gap-2"><button onClick={() => window.print()} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-3 py-2 rounded-md flex items-center gap-2 hover:opacity-90 text-xs"><Printer size={14} /> Print</button><button onClick={handleLogout} className="px-3 py-2 rounded-md flex items-center gap-2 border hover:bg-gray-50 text-red-600 text-xs"><LogOut size={14} /> Out</button></div>
-          </div>
-          <div className="flex flex-wrap items-end gap-4 justify-between pt-2">
-            <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-lg border"><span className="text-[10px] uppercase font-bold text-gray-500 px-2">Period</span><div className="font-bold text-sm px-2 border-r border-gray-300" style={{color: themeColor}}>{period.name}</div><input type="date" value={period.start} onChange={e => setPeriod({...period, start: e.target.value, name: 'กำหนดเอง'})} className="bg-transparent border-none text-xs w-24"/><span className="text-gray-400">-</span><input type="date" value={period.end} onChange={e => setPeriod({...period, end: e.target.value, name: 'กำหนดเอง'})} className="bg-transparent border-none text-xs w-24"/><button onClick={() => setShowPeriodManager(!showPeriodManager)} className="p-1 hover:bg-white rounded"><FolderPlus size={14}/></button>{showPeriodManager && <div className="absolute top-full left-0 mt-2 w-72 bg-white border shadow-xl rounded-xl z-50 p-4"><h4 className="font-bold mb-2 text-gray-700">Saved Periods</h4><ul className="max-h-40 overflow-y-auto mb-3 space-y-1 text-xs">{savedPeriods.map((p, pIdx) => (<li key={`${p.id}-${pIdx}`} className="flex justify-between p-2 hover:bg-blue-50 cursor-pointer rounded">{editingPeriod?.id === p.id ? (<div className="flex gap-1 flex-1" onClick={e=>e.stopPropagation()}><input className="border rounded p-1 w-20" value={editingPeriod.name} onChange={e=>setEditingPeriod({...editingPeriod, name:e.target.value})}/><input type="date" className="border rounded p-1" value={editingPeriod.start} onChange={e=>setEditingPeriod({...editingPeriod, start:e.target.value})}/><input type="date" className="border rounded p-1" value={editingPeriod.end} onChange={e=>setEditingPeriod({...editingPeriod, end:e.target.value})}/><button onClick={handleUpdatePeriod} className="bg-green-500 text-white px-1 rounded">✓</button><button onClick={()=>setEditingPeriod(null)} className="bg-gray-300 px-1 rounded">x</button></div>) : (<><span onClick={() => {setPeriod(p); setShowPeriodManager(false);}} className="flex-1">{p.name}</span> <div className="flex gap-1"><button onClick={(e)=>{e.stopPropagation(); setEditingPeriod(p);}} className="text-gray-400 hover:text-blue-500"><Pencil size={12}/></button><button onClick={(e)=>{e.stopPropagation(); handleDeletePeriod(p.id)}} className="text-gray-400 hover:text-red-500"><X size={12}/></button></div></>)}</li>))}</ul><div className="flex gap-1"><input className="border rounded px-2 py-1 text-xs flex-1" placeholder="ชื่อรอบ" value={newPeriodName} onChange={e=>setNewPeriodName(e.target.value)}/><button onClick={handleSavePeriod} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-2 rounded text-xs">Save</button></div></div>}</div>
-            <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
-                {visibleTabs.map(t => {
-                    const IconComponent = t.icon;
-                    return <button key={t.id} onClick={() => setActiveTab(t.id)} className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-1 ${activeTab === t.id ? 'shadow' : 'text-gray-500 hover:text-gray-700'}`} style={activeTab === t.id ? {backgroundColor: themeColor, color: themeTextColor} : {}}><IconComponent size={12}/> {t.label}</button>
-                })}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className={`max-w-7xl mx-auto px-4 py-6 ${activeTab !== 'reports' ? 'no-print' : ''}`}>
-        <ErrorBoundary>
-          {activeTab === 'dashboard' && (
-             <div className="space-y-6">
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                    <div style={{backgroundColor: themeColor, color: themeTextColor}} className="p-4 rounded-xl shadow-lg relative overflow-hidden"><h3 className="text-xs uppercase font-bold opacity-70">Incentive รวม</h3><div className="text-xl font-bold mt-1">฿{calculatedData.totalIncentive.toLocaleString()}</div><DollarSign className="absolute right-2 bottom-2 opacity-10" size={40}/></div>
-                    <div className="bg-white border p-4 rounded-xl shadow-sm relative overflow-hidden"><h3 className="text-xs uppercase font-bold text-gray-500">จำนวนรางรวม</h3><div className="text-xl font-bold mt-1 text-gray-800">{calculatedData.totalRails.toLocaleString()} <span className="text-xs font-normal text-gray-400">ราง</span></div><Ruler className="absolute right-2 bottom-2 opacity-10 text-gray-500" size={40}/></div>
-                    <div className="bg-white border p-4 rounded-xl shadow-sm relative overflow-hidden"><h3 className="text-xs uppercase font-bold text-gray-500">งานวัดพื้นที่</h3><div className="text-xl font-bold mt-1 text-gray-800">{calculatedData.totalMeasureJobs} <span className="text-xs font-normal text-gray-400">งาน</span></div><MapPin className="absolute right-2 bottom-2 opacity-10 text-gray-500" size={40}/></div>
-                    <div className="bg-white border p-4 rounded-xl shadow-sm relative overflow-hidden"><h3 className="text-xs uppercase font-bold text-gray-500">จำนวนช่าง</h3><div className="text-xl font-bold mt-1 text-gray-800">{calculatedData.totalTechs} <span className="text-xs font-normal text-gray-400">คน</span></div><Users className="absolute right-2 bottom-2 opacity-10 text-gray-500" size={40}/></div>
-                    <div className="bg-white border p-4 rounded-xl shadow-sm relative overflow-hidden"><h3 className="text-xs uppercase font-bold text-gray-500">จำนวนงาน</h3><div className="text-xl font-bold mt-1 text-gray-800">{calculatedData.periodJobs.length} <span className="text-xs font-normal text-gray-400">งาน</span></div><FileText className="absolute right-2 bottom-2 opacity-10 text-gray-500" size={40}/></div>
-                    <div className="bg-white border p-4 rounded-xl shadow-sm relative overflow-hidden"><h3 className="text-xs uppercase font-bold text-gray-500">วันทำการ</h3><div className="text-xl font-bold mt-1 text-gray-800">{calculatedData.periodWorkingDays} <span className="text-xs font-normal text-gray-400">วัน</span></div><CalendarDays className="absolute right-2 bottom-2 opacity-10 text-gray-500" size={40}/></div>
-                </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="bg-white p-6 rounded-xl shadow border"><h3 className="font-bold text-lg mb-4 flex items-center gap-2"><BarChart3 size={18}/> ยอด Incentive แยกทีม</h3><div className="space-y-3">{calculatedData.teamStats.map(t => (<div key={t.id}><div className="flex justify-between text-xs mb-1"><span className="font-bold">{t.name}</span><span>฿{Math.round(t.totalEarned).toLocaleString()}</span></div><div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-1"><div className="h-full rounded-full" style={{backgroundColor: themeColor, width: `${(t.totalEarned / (calculatedData.totalIncentive || 1)) * 100}%`}}></div></div><div className="text-[10px] text-gray-500 text-right">จำนวนราง: {t.totalRails.toLocaleString()}</div></div>))}</div></div>
-                    <div className="bg-white p-6 rounded-xl shadow border"><h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Users size={18}/> ยอด Incentive แยกบุคคล</h3><div className="overflow-y-auto max-h-[300px]"><table className="w-full text-xs"><thead className="bg-gray-50 sticky top-0"><tr><th className="p-2 text-left">ชื่อ</th><th className="p-2 text-left">ทีม</th><th className="p-2 text-right">วัน</th><th className="p-2 text-right">ยอด</th></tr></thead><tbody className="divide-y">{calculatedData.individualStats.map((m, idx) => (<tr key={idx} className="hover:bg-gray-50"><td className="p-2 font-medium">{m.name}</td><td className="p-2 text-gray-500">{m.teamName}</td><td className="p-2 text-right">{m.workDays}</td><td className="p-2 text-right font-bold text-green-700">฿{Math.round(m.incentive).toLocaleString()}</td></tr>))}</tbody></table></div></div>
-                </div>
-             </div>
-          )}
-
-          {activeTab === 'jobs' && (
-             <div className="bg-white rounded-xl shadow border overflow-hidden">
-                 <div className="p-4 border-b flex justify-between items-center bg-gray-50 gap-4">
-                     <h3 className="font-bold text-gray-700 whitespace-nowrap">รายการงาน</h3>
-                     <div className="flex-1 max-w-md relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} /><input type="text" placeholder="ค้นหา: ชื่อลูกค้า, เลข Order, วันที่..." className="w-full pl-9 pr-4 py-1.5 border rounded-lg text-xs focus:outline-none" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}/>{searchQuery && (<button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X size={14} /></button>)}</div>
+// ... existing code ...
                      <div className="flex gap-2">
                          <select className="border rounded-lg text-xs px-2 py-1.5 bg-white" value={jobSortOrder} onChange={(e) => setJobSortOrder(e.target.value)}><option value="desc">เรียงเวลา: ล่าสุดขึ้นก่อน</option><option value="asc">เรียงเวลา: เก่าสุดขึ้นก่อน</option></select>
                          <button onClick={exportToCSV} className="bg-green-600 text-white px-3 py-1.5 rounded text-xs flex items-center gap-1"><FileSpreadsheet size={14}/> CSV</button>
                          <button onClick={initiateAddJob} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-3 py-1.5 rounded text-xs flex items-center gap-1 hover:opacity-90"><Plus size={14}/> เพิ่ม</button>
                      </div>
                  </div>
-                 <div className="overflow-x-auto"><table className="w-full text-left"><thead className="bg-gray-100 text-xs text-gray-500 font-bold uppercase"><tr><th className="p-3 text-center">#</th><th className="p-3">วันที่/เวลา</th><th className="p-3">รายละเอียด</th><th className="p-3">งาน</th><th className="p-3 text-center">ราง</th><th className="p-3">ทีมช่าง</th><th className="p-3 text-right">Incentive</th><th className="p-3 text-center">ตรวจสอบ</th><th className="p-3 text-center">ลำดับ</th><th className="p-3"></th></tr></thead><tbody className="divide-y text-xs">{calculatedData.periodJobs.filter(j => { const q = searchQuery.toLowerCase(); return !q || (j.customer || '').toLowerCase().includes(q) || (j.orderNo || '').toLowerCase().includes(q) || (j.date || '').includes(q); }).map((j, i) => (<tr key={j.id} className={`hover:bg-gray-50 ${j.isChecked ? 'bg-green-50/30' : ''}`}><td className="p-3 text-center text-gray-400">{i+1}</td><td className="p-3 w-36 align-top"><input type="date" value={j.date} onChange={e=>updateJob(j.id,'date',e.target.value)} className="border rounded p-1 w-full mb-1"/><select className="border rounded p-1 w-full text-[10px]" value={j.timeSlot || DEFAULT_TIME_SLOT} onChange={e=>updateJob(j.id,'timeSlot',e.target.value)}>{TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}</select></td><td className="p-3 w-48 align-top space-y-1"><input placeholder="Order No." value={j.orderNo || ''} onChange={e=>updateJob(j.id,'orderNo',e.target.value)} className="border rounded p-1 w-full bg-blue-50 font-bold"/><input placeholder="ลูกค้า" value={j.customer||''} onChange={e=>updateJob(j.id,'customer',e.target.value)} className="border rounded p-1 w-full"/><input placeholder="สถานที่" value={j.location||''} onChange={e=>updateJob(j.id,'location',e.target.value)} className="border rounded p-1 w-full"/></td><td className="p-3 align-top"><select value={j.type} onChange={e=>updateJob(j.id,'type',e.target.value)} className="border rounded p-1 w-full">{JOB_TYPES.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}</select></td><td className="p-3 align-top"><input type="number" value={j.rails} onChange={e=>updateJob(j.id,'rails',e.target.value)} className="border rounded p-1 w-12 text-center"/></td><td className="p-3 align-top"><div className="flex flex-wrap gap-1">{teams.map(t => (
+                 <div className="overflow-x-auto"><table className="w-full text-left"><thead className="bg-gray-100 text-xs text-gray-500 font-bold uppercase"><tr><th className="p-3 text-center">#</th><th className="p-3">วันที่/เวลา</th><th className="p-3">รายละเอียด</th><th className="p-3">งาน</th><th className="p-3 text-center">ราง</th><th className="p-3">ทีมช่าง (จัดทีมตามวัน)</th><th className="p-3 text-right">Incentive</th><th className="p-3 text-center">ตรวจสอบ</th><th className="p-3 text-center">ลำดับ</th><th className="p-3"></th></tr></thead><tbody className="divide-y text-xs">{calculatedData.periodJobs.filter(j => { const q = searchQuery.toLowerCase(); return !q || (j.customer || '').toLowerCase().includes(q) || (j.orderNo || '').toLowerCase().includes(q) || (j.date || '').includes(q); }).map((j, i) => (<tr key={j.id} className={`hover:bg-gray-50 ${j.isChecked ? 'bg-green-50/30' : ''}`}><td className="p-3 text-center text-gray-400">{i+1}</td><td className="p-3 w-36 align-top"><input type="date" value={j.date} onChange={e=>updateJob(j.id,'date',e.target.value)} className="border rounded p-1 w-full mb-1"/><select className="border rounded p-1 w-full text-[10px]" value={j.timeSlot || DEFAULT_TIME_SLOT} onChange={e=>updateJob(j.id,'timeSlot',e.target.value)}>{TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}</select></td><td className="p-3 w-48 align-top space-y-1"><input placeholder="Order No." value={j.orderNo || ''} onChange={e=>updateJob(j.id,'orderNo',e.target.value)} className="border rounded p-1 w-full bg-blue-50 font-bold"/><input placeholder="ลูกค้า" value={j.customer||''} onChange={e=>updateJob(j.id,'customer',e.target.value)} className="border rounded p-1 w-full"/><input placeholder="สถานที่" value={j.location||''} onChange={e=>updateJob(j.id,'location',e.target.value)} className="border rounded p-1 w-full"/></td><td className="p-3 align-top"><select value={j.type} onChange={e=>updateJob(j.id,'type',e.target.value)} className="border rounded p-1 w-full">{JOB_TYPES.map(t=><option key={t.id} value={t.id}>{t.label}</option>)}</select></td><td className="p-3 align-top"><input type="number" value={j.rails} onChange={e=>updateJob(j.id,'rails',e.target.value)} className="border rounded p-1 w-12 text-center"/></td><td className="p-3 align-top"><div className="flex flex-wrap gap-1">{teams.map(t => {
+                   // หาพนักงานที่มีสิทธิ์อยู่ในทีมนี้ ในวันที่ทำงานนี้ (รองรับการย้ายทีม)
+                   const teamMembersOnDate = allMembers.filter(m => isMemberInTeamOnDate(m, t.id, j.date));
+                   if (teamMembersOnDate.length === 0) return null; // ไม่แสดงทีมที่ไม่มีคนในวันนั้น
+
+                   return (
                    <div key={t.id} className="border p-1 rounded bg-white">
                        <div className="font-bold text-[9px] mb-1">{t.name}</div>
                        <div className="flex gap-1 flex-wrap">
-                           {(t.members || []).map((m, mIdx) => {
+                           {teamMembersOnDate.map((m, mIdx) => {
                                const isSelected = (j.selectedTechs || []).includes(m.id);
                                
                                const leave = leaves.find(l => l.techId === m.id && l.date === j.date);
@@ -833,7 +487,7 @@ export default function App() {
                                    disabled={isDisabled}
                                    style={isSelected && !isDisabled ? (isNoInc ? {backgroundColor: '#f3e8ff', color: '#7e22ce', borderColor: '#d8b4fe'} : {backgroundColor: themeColor, color: themeTextColor, borderColor: themeColor}) : {}}
                                    className={`px-1.5 py-0.5 rounded text-[9px] border 
-                                     ${!isSelected && !isDisabled ? 'bg-gray-100 text-gray-500' : ''}
+                                     ${!isSelected && !isDisabled ? 'bg-gray-100 text-gray-500 hover:bg-gray-200' : ''}
                                      ${isLeave ? 'opacity-40 cursor-not-allowed bg-red-100 text-red-400 border-red-200' : ''}
                                      ${isResigned || isNotYetJoined ? 'line-through bg-gray-200 text-gray-400 cursor-not-allowed border-gray-300' : ''}
                                    `}
@@ -845,19 +499,22 @@ export default function App() {
                            })}
                        </div>
                    </div>
-               ))}</div></td><td className="p-3 text-right align-top font-bold">฿{j.calculatedValue.toLocaleString()}</td><td className="p-3 text-center align-top"><button onClick={()=>toggleJobCheck(j.id, j.isChecked)} className="text-gray-500 hover:text-black">{j.isChecked ? <CheckSquare size={18} className="text-green-600" /> : <Square size={18} />}</button></td><td className="p-3 text-center align-top"><div className="flex flex-col items-center"><button onClick={()=>moveJob(j.id, -1, calculatedData.periodJobs)} className="text-gray-400 hover:text-black"><ArrowUp size={12}/></button><button onClick={()=>moveJob(j.id, 1, calculatedData.periodJobs)} className="text-gray-400 hover:text-black"><ArrowDown size={12}/></button></div></td><td className="p-3 text-center align-top"><button onClick={()=>removeJob(j.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={14}/></button></td></tr>))}</tbody></table></div>
+               )})}</div></td><td className="p-3 text-right align-top font-bold">฿{j.calculatedValue.toLocaleString()}</td><td className="p-3 text-center align-top"><button onClick={()=>toggleJobCheck(j.id, j.isChecked)} className="text-gray-500 hover:text-black">{j.isChecked ? <CheckSquare size={18} className="text-green-600" /> : <Square size={18} />}</button></td><td className="p-3 text-center align-top"><div className="flex flex-col items-center"><button onClick={()=>moveJob(j.id, -1, calculatedData.periodJobs)} className="text-gray-400 hover:text-black"><ArrowUp size={12}/></button><button onClick={()=>moveJob(j.id, 1, calculatedData.periodJobs)} className="text-gray-400 hover:text-black"><ArrowDown size={12}/></button></div></td><td className="p-3 text-center align-top"><button onClick={()=>removeJob(j.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={14}/></button></td></tr>))}</tbody></table></div>
              </div>
           )}
 
           {activeTab === 'teams' && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {teams.map(t => (
+                  {teams.map(t => {
+                      const currentTeamMembers = allMembers.filter(m => m.currentTeamId === t.id);
+                      
+                      return (
                       <div key={t.id} className="bg-white p-4 rounded-xl shadow border relative group">
                           <button onClick={()=>handleDeleteTeam(t.id)} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500"><Trash2 size={14}/></button>
-                          <h3 className="font-bold text-lg mb-2">{t.name}</h3>
+                          <h3 className="font-bold text-lg mb-2">{t.name} <span className="text-xs font-normal text-gray-500">({currentTeamMembers.length} คน)</span></h3>
                           <ul className="space-y-2 mb-4">
-                            {(t.members||[]).map((m, mIdx) => (
-                                <li key={`${m.id}-${mIdx}`} className="flex flex-col text-xs bg-gray-50 p-2 rounded hover:bg-gray-100">
+                            {currentTeamMembers.map((m, mIdx) => (
+                                <li key={`${m.id}-${mIdx}`} className="flex flex-col text-xs bg-gray-50 p-2 rounded border">
                                     
                                     {transferringMember?.member.id === m.id && transferringMember?.teamId === t.id ? (
                                         <div className="flex-1 space-y-2 bg-blue-50 p-2 rounded border border-blue-100">
@@ -872,26 +529,46 @@ export default function App() {
                                                 <button onClick={()=>setTransferringMember(null)} className="bg-gray-300 text-gray-700 px-2 py-1.5 rounded text-xs w-full hover:bg-gray-400">ยกเลิก</button>
                                             </div>
                                         </div>
-                                    ) : editingMember?.memberId === m.id ? (
+                                    ) : editingMember?.id === m.id ? (
                                         <div className="flex-1 space-y-2">
-                                            <input className="border rounded w-full p-1" value={editingMember.data.name} onChange={e=>setEditingMember({...editingMember, data:{...editingMember.data, name:e.target.value}})} />
-                                            <div className="flex gap-1"><span className="w-8">เริ่ม:</span><input type="date" className="border rounded p-1" value={editingMember.data.joinDate} onChange={e=>setEditingMember({...editingMember, data:{...editingMember.data, joinDate:e.target.value}})} /></div>
-                                            <div className="flex gap-1"><span className="w-8">ออก:</span><input type="date" className="border rounded p-1" value={editingMember.data.resignDate} onChange={e=>setEditingMember({...editingMember, data:{...editingMember.data, resignDate:e.target.value}})} /></div>
-                                            <div className="flex gap-2 mt-1">
-                                                <button onClick={handleUpdateMember} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-2 py-1 rounded">บันทึก</button>
-                                                <button onClick={()=>setEditingMember(null)} className="bg-gray-200 px-2 py-1 rounded">ยกเลิก</button>
+                                            <input className="border rounded w-full p-1" value={editingMember.name} onChange={e=>setEditingMember({...editingMember, name:e.target.value})} />
+                                            <div className="flex gap-1"><span className="w-8">เริ่ม:</span><input type="date" className="border rounded p-1" value={editingMember.joinDate} onChange={e=>setEditingMember({...editingMember, joinDate:e.target.value})} /></div>
+                                            <div className="flex gap-1"><span className="w-8">ออก:</span><input type="date" className="border rounded p-1" value={editingMember.resignDate} onChange={e=>setEditingMember({...editingMember, resignDate:e.target.value})} /></div>
+                                            
+                                            {/* ประวัติการย้ายทีม */}
+                                            <div className="mt-2 pt-2 border-t border-gray-200">
+                                                <span className="text-[10px] font-bold text-gray-500">ประวัติการสังกัดทีม:</span>
+                                                <ul className="mt-1 space-y-1">
+                                                    {(editingMember.teamHistory || []).map((history, hIdx) => {
+                                                        const hTeam = teams.find(ht => ht.id === history.teamId);
+                                                        return (
+                                                            <li key={hIdx} className="text-[10px] flex justify-between bg-white p-1 rounded border items-center">
+                                                                <span>{hTeam?.name || 'Unknown'} (ตั้งแต่ {formatDate(history.effectiveDate)})</span>
+                                                                {hIdx > 0 && <button onClick={() => removeMigrationHistory(m.id, hIdx)} className="text-red-400 hover:text-red-600 px-1">x</button>}
+                                                            </li>
+                                                        );
+                                                    })}
+                                                </ul>
+                                            </div>
+
+                                            <div className="flex gap-2 mt-2 pt-2">
+                                                <button onClick={handleUpdateMember} style={{backgroundColor: themeColor, color: themeTextColor}} className="flex-1 px-2 py-1 rounded shadow-sm">บันทึก</button>
+                                                <button onClick={()=>setEditingMember(null)} className="bg-gray-200 flex-1 px-2 py-1 rounded shadow-sm">ยกเลิก</button>
                                             </div>
                                         </div>
                                     ) : (
-                                        <div className="flex justify-between items-center w-full">
+                                        <div className="flex justify-between items-start w-full">
                                             <div>
-                                                <div className={`font-medium ${m.resignDate ? 'text-gray-400 line-through' : ''}`}>{m.name} {m.resignDate && <span className="text-[9px] text-red-500 no-underline ml-1">(ออก/ย้าย)</span>}</div>
-                                                <div className="text-[10px] text-gray-400">{formatDate(m.joinDate)} {m.resignDate ? `- ${formatDate(m.resignDate)}` : ''}</div>
+                                                <div className={`font-medium ${m.resignDate ? 'text-red-500 line-through' : ''}`}>{m.name}</div>
+                                                <div className="text-[10px] text-gray-400 mt-0.5">
+                                                    เริ่ม: {formatDate(m.joinDate)} 
+                                                    {m.resignDate && <span className="text-red-500 font-bold ml-1"> (ลาออก: {formatDate(m.resignDate)})</span>}
+                                                </div>
                                             </div>
                                             <div className="flex gap-1">
-                                                <button onClick={() => setTransferringMember({ teamId: t.id, member: m, targetTeamId: '', date: new Date().toISOString().split('T')[0] })} className="text-gray-400 hover:text-blue-600 p-1 bg-white rounded shadow-sm border" title="ย้ายทีม"><ArrowRightLeft size={12}/></button>
-                                                <button onClick={() => setEditingMember({ teamId: t.id, memberId: m.id, data: { name: m.name, joinDate: m.joinDate, resignDate: m.resignDate || '' } })} className="text-gray-400 hover:text-black p-1 bg-white rounded shadow-sm border"><Pencil size={12}/></button>
-                                                <button onClick={()=>handleDeleteMember(t.id, m.id)} className="text-gray-400 hover:text-red-500 p-1 bg-white rounded shadow-sm border"><X size={12}/></button>
+                                                <button onClick={() => setTransferringMember({ teamId: t.id, member: m, targetTeamId: '', date: new Date().toISOString().split('T')[0] })} className="text-orange-400 hover:text-orange-600 p-1 bg-white rounded shadow-sm border" title="ย้ายทีม"><ArrowRightLeft size={12}/></button>
+                                                <button onClick={() => setEditingMember(m)} className="text-blue-400 hover:text-blue-600 p-1 bg-white rounded shadow-sm border" title="แก้ไขข้อมูล"><Pencil size={12}/></button>
+                                                <button onClick={()=>handleDeleteMember(m.id)} className="text-gray-400 hover:text-red-500 p-1 bg-white rounded shadow-sm border" title="ลบออกจากระบบ"><Trash2 size={12}/></button>
                                             </div>
                                         </div>
                                     )}
@@ -900,59 +577,36 @@ export default function App() {
                           </ul>
                           {addingMemberTo === t.id ? (<div className="bg-gray-50 p-2 rounded space-y-2"><input placeholder="ชื่อ" className="border w-full p-1 text-xs rounded" value={newMember.name} onChange={e=>setNewMember({...newMember, name:e.target.value})}/><div className="flex gap-1"><span className="text-[10px] w-8 pt-1">เริ่ม:</span><input type="date" className="border w-full p-1 text-xs rounded" value={newMember.joinDate} onChange={e=>setNewMember({...newMember, joinDate:e.target.value})}/></div><div className="flex gap-1"><span className="text-[10px] w-8 pt-1">ออก:</span><input type="date" className="border w-full p-1 text-xs rounded" value={newMember.resignDate} onChange={e=>setNewMember({...newMember, resignDate:e.target.value})}/></div><div className="flex gap-1"><button onClick={()=>handleAddMember(t.id)} style={{backgroundColor: themeColor, color: themeTextColor}} className="w-full rounded text-xs py-1">Save</button><button onClick={()=>setAddingMemberTo(null)} className="bg-gray-200 w-full rounded text-xs py-1">Cancel</button></div></div>) : (<button onClick={()=>{setAddingMemberTo(t.id); setNewMember({name:'',joinDate:new Date().toISOString().split('T')[0], resignDate: ''})}} className="w-full border-2 border-dashed p-2 rounded text-xs text-gray-400 hover:border-gray-400 hover:text-gray-600">+ เพิ่มช่าง</button>)}
                       </div>
-                  ))}
-                  {isAddingTeam ? (<div className="bg-white p-4 rounded-xl shadow border"><input placeholder="ชื่อทีม" className="border w-full p-2 mb-2 rounded" autoFocus value={newTeamName} onChange={e=>setNewTeamName(e.target.value)}/><div className="flex gap-2"><button onClick={handleAddTeam} style={{backgroundColor: themeColor, color: themeTextColor}} className="flex-1 py-2 rounded">สร้าง</button><button onClick={()=>setIsAddingTeam(false)} className="bg-gray-100 flex-1 py-2 rounded">ยกเลิก</button></div></div>) : <button onClick={()=>setIsAddingTeam(true)} className="bg-gray-50 border-2 border-dashed rounded-xl flex items-center justify-center p-8 text-gray-400 hover:bg-white hover:border-gray-800 transition-all"><Plus size={32}/></button>}
-              </div>
-          )}
-
-          {activeTab === 'calendar' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-white p-6 rounded-xl shadow border">
-                      <h3 className="font-bold mb-4 flex items-center gap-2"><Calendar className="text-red-500"/> วันหยุดบริษัท</h3>
-                      <div className="grid grid-cols-7 text-center text-xs gap-1 mb-2">{['อา','จ','อ','พ','พฤ','ศ','ส'].map(d => (<div key={d} className="font-bold text-gray-400 py-1">{d}</div>))}</div>
-                      <div className="grid grid-cols-7 text-center text-xs gap-1">
-                          {(() => {
-                              const days = getDaysArray(period.start, period.end);
-                              if (days.length === 0) return null;
-                              const [y, m, d] = days[0].split('-').map(Number);
-                              const firstDate = new Date(y, m - 1, d);
-                              const startOffset = firstDate.getDay(); 
-                              return (
-                                  <>
-                                    {Array(startOffset).fill(null).map((_,i)=><div key={`b${i}`} className="p-2 bg-gray-50/50 border border-transparent"></div>)}
-                                    {days.map(dStr => {
-                                        const dayNum = parseInt(dStr.split('-')[2], 10);
-                                        return <button key={dStr} onClick={()=>handleAddHoliday(dStr)} className={`p-2 rounded border flex flex-col items-center justify-center h-16 ${holidays.includes(dStr)?'bg-red-50 border-red-200 text-red-600 font-bold':'hover:bg-gray-50'}`}><span className="text-lg">{dayNum}</span></button>
-                                    })}
-                                  </>
-                              )
-                          })()}
-                      </div>
-                  </div>
-                  <div className="bg-white p-6 rounded-xl shadow border">
-                      <h3 className="font-bold mb-4 flex items-center gap-2"><Users className="text-orange-500"/> วันลาพนักงาน</h3>
+                  )})}
+// ... existing code ...
                       <div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr><th className="text-left sticky left-0 bg-white p-2 min-w-[100px]">ชื่อ</th>{getDaysArray(period.start, period.end).map(d=><th key={d} className="min-w-[30px] p-1 text-center bg-gray-50 border-b"><div className="text-[8px] text-gray-400">{parseInt(d.split('-')[2])}</div></th>)}</tr></thead>
                       <tbody>
-                      {teams.flatMap(t => 
-                            (t.members||[]).map(m => ({ ...m, teamId: t.id }))
-                        ).map((m, flatIdx) => (
+                      {allMembers.map((m, flatIdx) => {
+                            const isResigned = m.resignDate && m.resignDate <= period.end;
+                            return (
                             <tr key={`${m.id}-${flatIdx}`} className="hover:bg-gray-50">
-                                <td className="py-2 sticky left-0 bg-white border-r font-medium pl-2">{m.name}</td>
+                                <td className={`py-2 sticky left-0 bg-white border-r font-medium pl-2 ${isResigned ? 'text-gray-400 line-through' : ''}`}>{m.name}</td>
                                 {getDaysArray(period.start, period.end).map(d => {
+                                    const isResignedOnDate = m.resignDate && m.resignDate <= d; 
                                     const l = leaves.find(x => x.techId === m.id && x.date === d);
                                     const holiday = holidays.includes(d);
                                     const leaveType = l ? LEAVE_TYPES.find(t => t.id === l.type) : null;
+                                    
+                                    if (isResignedOnDate) {
+                                        return <td key={d} className="border text-center bg-gray-100"></td>;
+                                    }
+                                    
                                     return (
                                         <td 
                                             key={d} 
                                             onClick={(e) => !holiday && openLeaveMenu(e, m.id, d)} 
-                                            className={`border text-center cursor-pointer ${holiday ? 'bg-red-50' : ''} ${leaveType ? leaveType.color : ''}`}>
+                                            className={`border text-center cursor-pointer transition-colors ${holiday ? 'bg-red-50' : 'hover:bg-blue-50'} ${leaveType ? leaveType.color : ''}`}>
                                             {leaveType ? leaveType.short : ''}
                                         </td>
                                     );
                                 })}
                             </tr>
-                        ))}
+                        )})}
                       </tbody></table></div>
                   </div>
               </div>
@@ -978,234 +632,21 @@ export default function App() {
                                       {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                                   </select>
                               </div>
-                              
-                              {selectedReportTeamId && calculatedData.reportTeamLogs[selectedReportTeamId] && (
-                                  <div className="overflow-x-auto print-only-table">
-                                      <table className="w-full text-left text-xs border-collapse">
-                                          <thead className="bg-gray-100">
-                                              <tr className="print-only-row bg-white">
-                                                  <th colSpan="9" className="text-center pb-6 pt-2 bg-white no-border-print" style={{ border: 'none' }}>
-                                                      <img src={LOGO_URL} alt="PASAYA Logo" className="h-16 w-auto mx-auto mb-2 object-contain" />
-                                                      <h3 className="font-bold text-lg text-black">{calculatedData.reportTeamLogs[selectedReportTeamId].name}</h3>
-                                                      <div className="text-sm font-normal text-gray-800">ประจำรอบ {period.name} ({formatDate(period.start)} - {formatDate(period.end)})</div>
-                                                  </th>
-                                              </tr>
-                                              <tr><th className="border p-2">วันที่</th><th className="border p-2">เวลา</th><th className="border p-2">งาน</th><th className="border p-2">ลูกค้า</th><th className="border p-2">สถานที่</th><th className="border p-2 text-center">ราง (แบ่ง)</th><th className="border p-2 text-center">จำนวนช่าง (ในทีม)</th><th className="border p-2 text-center">หมายเหตุ</th><th className="border p-2 text-right">Incentive</th></tr>
-                                          </thead>
-                                          <tbody>
-                                              {calculatedData.reportTeamLogs[selectedReportTeamId].rows.map((row, rIdx) => (
-                                                  <tr key={rIdx} className={row.isHoliday ? 'bg-red-50 text-red-600 font-bold' : ''}>
-                                                      <td className="border p-2 whitespace-nowrap">{formatDate(row.date)}</td>
-                                                      {row.isHoliday ? (
-                                                          <td colSpan="8" className="border p-2 text-center">วันหยุดบริษัท</td>
-                                                      ) : (
-                                                          <>
-                                                            <td className="border p-2">{row.time}</td>
-                                                            <td className="border p-2">{row.type}</td>
-                                                            <td className="border p-2">{row.customer}</td>
-                                                            <td className="border p-2">{row.location}</td>
-                                                            <td className="border p-2 text-center">{row.rails}</td>
-                                                            <td className="border p-2 text-center">{row.techs}</td>
-                                                            <td className="border p-2 text-center text-[10px] text-gray-500">{row.note}</td>
-                                                            <td className="border p-2 text-right">{row.inc !== '-' ? `฿${Number(row.inc).toLocaleString()}` : '-'}</td>
-                                                          </>
-                                                      )}
-                                                  </tr>
-                                              ))}
-                                              {calculatedData.reportTeamLogs[selectedReportTeamId].rows.length === 0 && <tr><td colSpan="9" className="text-center p-4 text-gray-400">ไม่มีข้อมูลในช่วงเวลานี้</td></tr>}
-                                          </tbody>
-                                          <tfoot className="bg-gray-100 font-bold">
-                                              <tr>
-                                                  <td colSpan="5" className="border p-2 text-right">รวมทั้งหมด</td>
-                                                  <td className="border p-2 text-center text-blue-700">
-                                                      {Number(calculatedData.reportTeamLogs[selectedReportTeamId].rows.reduce((sum, r) => sum + (typeof r.rails === 'number' ? r.rails : 0), 0).toFixed(2))}
-                                                  </td>
-                                                  <td className="border p-2" colSpan="2"></td>
-                                                  <td className="border p-2 text-right text-green-700">
-                                                      ฿{Math.round(calculatedData.reportTeamLogs[selectedReportTeamId].rows.reduce((sum, r) => sum + (typeof r.inc === 'number' ? r.inc : 0), 0)).toLocaleString()}
-                                                  </td>
-                                              </tr>
-                                          </tfoot>
-                                      </table>
-                                  </div>
-                              )}
-                          </div>
-                      )}
-
+// ... existing code ...
                       {reportType === 'tech' && (
                           <div>
                               <div className="mb-4 flex items-center gap-2 no-print">
                                   <label className="font-bold text-gray-700">เลือกพนักงาน:</label>
                                   <select className="border rounded p-2 text-sm" value={selectedReportTechId} onChange={e=>setSelectedReportTechId(e.target.value)}>
                                       <option value="">-- กรุณาเลือกพนักงาน --</option>
-                                      {teams.flatMap(t => (t.members||[]).map(m => ({id: m.id, name: m.name, tName: t.name}))).map(m => (
-                                          <option key={m.id} value={m.id}>{m.name} ({m.tName})</option>
-                                      ))}
+                                      {allMembers.map(m => {
+                                          const currentTeam = teams.find(t => t.id === m.currentTeamId)?.name || 'Unknown';
+                                          return <option key={m.id} value={m.id}>{m.name} ({currentTeam}) {m.resignDate ? '(ลาออกแล้ว)' : ''}</option>;
+                                      })}
                                   </select>
                               </div>
 
                               {selectedReportTechId && calculatedData.reportTechLogs[selectedReportTechId] && (
                                   <div className="overflow-x-auto print-only-table">
                                       <table className="w-full text-left text-xs border-collapse">
-                                          <thead className="bg-gray-100">
-                                              <tr className="print-only-row bg-white">
-                                                  <th colSpan="9" className="text-center pb-6 pt-2 bg-white no-border-print" style={{ border: 'none' }}>
-                                                      <img src={LOGO_URL} alt="PASAYA Logo" className="h-16 w-auto mx-auto mb-2 object-contain" />
-                                                      <h3 className="font-bold text-lg text-black">{calculatedData.reportTechLogs[selectedReportTechId].name} <span className="text-sm font-normal text-gray-500">({calculatedData.reportTechLogs[selectedReportTechId].teamName})</span></h3>
-                                                      <div className="text-sm font-normal text-gray-800">ประจำรอบ {period.name} ({formatDate(period.start)} - {formatDate(period.end)})</div>
-                                                  </th>
-                                              </tr>
-                                              <tr><th className="border p-2">วันที่</th><th className="border p-2">เวลา</th><th className="border p-2">งาน</th><th className="border p-2">ลูกค้า</th><th className="border p-2">สถานที่</th><th className="border p-2 text-center">ราง (หาร)</th><th className="border p-2 text-center">จำนวนช่าง (ในทีม)</th><th className="border p-2 text-center">หมายเหตุ</th><th className="border p-2 text-right">Incentive</th></tr>
-                                          </thead>
-                                          <tbody>
-                                              {calculatedData.reportTechLogs[selectedReportTechId].rows.map((row, rIdx) => (
-                                                  <tr key={rIdx} className={row.isHoliday ? 'bg-red-50 text-red-600 font-bold' : row.isLeave ? 'bg-yellow-50 text-yellow-700' : ''}>
-                                                      <td className="border p-2 whitespace-nowrap">{formatDate(row.date)}</td>
-                                                      {row.isHoliday ? (
-                                                          <td colSpan="8" className="border p-2 text-center">วันหยุดบริษัท</td>
-                                                      ) : row.isLeave ? (
-                                                          <td colSpan="8" className="border p-2 text-center font-bold">{row.customer}</td>
-                                                      ) : (
-                                                          <>
-                                                            <td className="border p-2">{row.time}</td>
-                                                            <td className="border p-2">{row.type}</td>
-                                                            <td className="border p-2">{row.customer}</td>
-                                                            <td className="border p-2">{row.location}</td>
-                                                            <td className="border p-2 text-center">{row.rails}</td>
-                                                            <td className="border p-2 text-center">{row.techs}</td>
-                                                            <td className="border p-2 text-center text-[10px] text-gray-500">{row.note}</td>
-                                                            <td className="border p-2 text-right">{row.inc !== '-' && row.inc > 0 ? `฿${Number(row.inc).toLocaleString()}` : (row.inc === 0 ? '฿0' : '-')}</td>
-                                                          </>
-                                                      )}
-                                                  </tr>
-                                              ))}
-                                              {calculatedData.reportTechLogs[selectedReportTechId].rows.length === 0 && <tr><td colSpan="9" className="text-center p-4 text-gray-400">ไม่มีข้อมูลในช่วงเวลานี้</td></tr>}
-                                          </tbody>
-                                          <tfoot className="bg-gray-100 font-bold">
-                                              <tr>
-                                                  <td colSpan="5" className="border p-2 text-right">รวมทั้งหมด</td>
-                                                  <td className="border p-2 text-center text-blue-700">
-                                                      {Number(calculatedData.reportTechLogs[selectedReportTechId].rows.reduce((sum, r) => sum + (typeof r.rails === 'number' ? r.rails : 0), 0).toFixed(2))}
-                                                  </td>
-                                                  <td className="border p-2" colSpan="2"></td>
-                                                  <td className="border p-2 text-right text-green-700">
-                                                      ฿{Math.round(calculatedData.reportTechLogs[selectedReportTechId].rows.reduce((sum, r) => sum + (typeof r.inc === 'number' ? r.inc : 0), 0)).toLocaleString()}
-                                                  </td>
-                                              </tr>
-                                          </tfoot>
-                                      </table>
-                                  </div>
-                              )}
-                          </div>
-                      )}
-                  </div>
-              </div>
-          )}
-
-          {activeTab === 'admin' && currentUser?.role === 'super_admin' && (
-              <div className="bg-white p-6 rounded-xl shadow border max-w-2xl mx-auto">
-                  <h3 className="font-bold text-lg mb-6 flex items-center gap-2"><Shield className="text-blue-600"/> การตั้งค่าผู้ดูแลระบบ (Super Admin)</h3>
-                  
-                  <div className="mb-8 border-b pb-6">
-                      <h4 className="font-bold text-gray-700 mb-2 flex items-center gap-2"><Palette size={16}/> เปลี่ยนสีธีมหลัก</h4>
-                      <div className="flex items-center gap-4 bg-gray-50 p-4 rounded-lg">
-                          <input type="color" value={themeColor} onChange={e=>setThemeColor(e.target.value)} className="w-12 h-12 rounded cursor-pointer"/>
-                          <input type="text" value={themeColor} onChange={e=>setThemeColor(e.target.value)} className="border rounded p-2 w-28 text-sm font-mono text-center uppercase" maxLength={7} placeholder="#424242" />
-                          <div className="flex-1">
-                              <p className="text-xs text-gray-500">สีที่เลือกจะเปลี่ยนสีปุ่มและแถบเมนูทั้งหมดสำหรับผู้ใช้งานทุกคน (พิมพ์ระบุรหัส HEX ได้เลย)</p>
-                              <button onClick={() => handleSaveTheme(themeColor)} className="mt-2 px-4 py-1.5 rounded text-xs font-bold" style={{backgroundColor: themeColor, color: themeTextColor}}>บันทึกสี</button>
-                          </div>
-                      </div>
-                  </div>
-
-                  <div className="flex flex-col gap-2 mb-6 bg-gray-50 p-4 rounded-lg border">
-                      <label className="text-xs font-bold text-gray-600 flex items-center gap-2"><UserPlus size={14}/> เพิ่มผู้ใช้งานใหม่</label>
-                      <div className="grid grid-cols-2 gap-2 mt-2">
-                          <input type="text" placeholder="Username" className="border rounded-lg px-4 py-2 text-sm" value={newUser.username} onChange={e => setNewUser({...newUser, username: e.target.value})} />
-                          <input type="text" placeholder="Password" className="border rounded-lg px-4 py-2 text-sm" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} />
-                      </div>
-                      <div className="flex gap-2">
-                          <input type="text" placeholder="ชื่อเรียก (Display Name)" className="flex-1 border rounded-lg px-4 py-2 text-sm" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
-                          <select className="border rounded-lg px-2 py-2 text-sm bg-white" value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})}>
-                              <option value="admin">Admin</option>
-                              <option value="super_admin">Super Admin</option>
-                          </select>
-                          <button onClick={handleAddAppUser} style={{backgroundColor: themeColor, color: themeTextColor}} className="px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2">เพิ่ม</button>
-                      </div>
-                  </div>
-
-                  <div className="space-y-2 mb-8">
-                      {appUsers.map((u, idx) => (
-                          <div key={idx} className="flex justify-between items-center p-3 bg-white rounded-lg border hover:bg-gray-50 transition-colors">
-                              <div>
-                                  <div className="text-sm font-medium text-gray-800">{u.username} <span className="text-gray-400 font-normal">({u.name})</span></div>
-                                  <div className="flex items-center gap-2 mt-1">
-                                      <span className={`text-[10px] px-2 py-0.5 rounded-full ${u.role === 'super_admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>{u.role === 'super_admin' ? 'Super Admin' : 'Admin'}</span>
-                                      <span className="text-[10px] text-gray-400">Pass: {u.password}</span>
-                                  </div>
-                              </div>
-                              {u.username !== DEFAULT_SUPER_ADMIN.username && u.username !== currentUser.username && (
-                                  <button onClick={() => handleRemoveAppUser(u.id, u.username)} className="text-gray-300 hover:text-red-500 p-2 rounded hover:bg-red-50 transition-all"><Trash2 size={16}/></button>
-                              )}
-                          </div>
-                      ))}
-                  </div>
-
-                  <div className="border-t pt-6">
-                      <h4 className="font-bold text-gray-700 mb-2 flex items-center gap-2"><Database size={16}/> จัดการฐานข้อมูล</h4>
-                      
-                      <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 flex items-center justify-between mb-4">
-                          <div>
-                              <p className="text-sm font-bold text-blue-800">เคลียร์รายชื่อช่างตกค้าง (Clear Ghost Data)</p>
-                              <p className="text-xs text-blue-600 mt-1">ลบรายชื่อช่างที่ถูกลบไปแล้ว แต่ยังค้างอยู่ในประวัติงาน</p>
-                          </div>
-                          <button onClick={handleCleanGhostData} className="bg-blue-600 text-white px-4 py-2 rounded text-xs hover:bg-blue-700 transition-colors flex items-center gap-1"><RefreshCw size={14}/> เคลียร์ข้อมูล</button>
-                      </div>
-
-                      <div className="bg-orange-50 p-4 rounded-lg border border-orange-100 flex items-center justify-between">
-                          <div>
-                              <p className="text-sm font-bold text-orange-800">กู้คืนข้อมูลเริ่มต้น (Reset Data)</p>
-                              <p className="text-xs text-orange-600 mt-1">ใช้เมื่อข้อมูลทีมช่างหาย หรือต้องการเริ่มระบบใหม่</p>
-                          </div>
-                          <button onClick={handleSeedData} className="bg-orange-600 text-white px-4 py-2 rounded text-xs hover:bg-orange-700 transition-colors">กู้คืนข้อมูล</button>
-                      </div>
-                  </div>
-              </div>
-          )}
-        </ErrorBoundary>
-      </div>
-      
-      <div className="print-only p-8 print-only-block">
-          {activeTab !== 'reports' && (
-              <>
-                  <div className="text-center mb-6">
-                      <img src={LOGO_URL} alt="PASAYA Logo" className="h-16 w-auto mx-auto mb-2 object-contain" />
-                      <h2 className="text-xl font-bold mt-2">สรุปรายงาน Incentive</h2>
-                      <p className="text-sm text-gray-500">{period.name} ({formatDate(period.start)} - {formatDate(period.end)})</p>
-                  </div>
-                  <div className="grid grid-cols-1 gap-8">
-                     {calculatedData.teamStats.map(t => (
-                         <div key={t.id} className="break-inside-avoid">
-                             <div className="flex justify-between border-b-2 border-black pb-1 mb-2 font-bold text-lg"><span>{t.name}</span><div className="text-right text-xs font-normal">ราง: {t.totalRails.toLocaleString()} | วัดพื้นที่: {t.totalMeasures}</div><span>ยอดทีม: ฿{Math.round(t.totalEarned).toLocaleString()}</span></div>
-                             <table className="w-full text-sm">
-                                 <thead><tr className="border-b"><th className="text-left">ชื่อ</th><th className="text-left">วันลา (วันที่ - สาเหตุ)</th><th className="text-center">วันทำงาน</th><th className="text-right">Incentive</th></tr></thead>
-                                 <tbody>
-                                     {t.members.map(m => (
-                                         <tr key={m.id} className="border-b border-gray-100">
-                                             <td className="py-1 align-top">{m.name}</td>
-                                             <td className="text-left text-xs text-red-500 align-top">{m.leaves.length > 0 ? m.leaves.map(l => (<div key={l.date}>{formatDate(l.date)} - {LEAVE_TYPES.find(typ=>typ.id===l.type)?.label}</div>)) : '-'}</td>
-                                             <td className="text-center align-top">{m.workDays}</td><td className="text-right align-top">฿{Math.round(m.incentive).toLocaleString()}</td>
-                                         </tr>
-                                     ))}
-                                 </tbody>
-                             </table>
-                         </div>
-                     ))}
-                     <div className="text-right font-bold text-xl mt-4 border-t-2 border-black pt-2">รวมทั้งหมด: ฿{Math.round(calculatedData.totalIncentive).toLocaleString()}</div>
-                  </div>
-              </>
-          )}
-      </div>
-    </div>
-  );
-}
+// ... existing code ...
