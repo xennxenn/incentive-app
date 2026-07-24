@@ -31,14 +31,13 @@ import {
 } from "firebase/firestore";
 
 // ------------------------------------------------------------------
-// 🚀 DEPLOYMENT CONFIGURATION (V7)
+// 🚀 DEPLOYMENT CONFIGURATION
 // ------------------------------------------------------------------
 let app;
 let auth;
 let db;
 let firebaseError = null;
 
-// 1. Hardcoded Config
 const manualConfig = {
   apiKey: "AIzaSyCRtYrko1XhpTTCRecRqKduASdSdimi64M",
   authDomain: "incentive-employ.firebaseapp.com",
@@ -67,7 +66,7 @@ try {
   }
 }
 
-// 2. APP ID
+// APP ID ต้องใช้ตัวเดิมเพื่อให้ข้อมูลเดิมดึงกลับมา
 const appId = 'pasaya-incentive-v6-production';
 const LOGO_URL = 'https://lh3.googleusercontent.com/d/1xT2ysUSWkTcFxs1ztoGxZuQcnO_c66Tu';
 
@@ -82,6 +81,14 @@ class ErrorBoundary extends React.Component {
 }
 
 const DEFAULT_SUPER_ADMIN = { username: 'T58121', password: '1234', name: 'Admin T58121', role: 'super_admin' };
+const DEFAULT_TEAMS_DATA = [
+  { name: 'ทีมช่างนาย', members: [{name: 'ช่างนาย', joinDate: '2024-01-01'}, {name: 'ช่างอาท', joinDate: '2024-01-01'}, {name: 'ช่างลิด', joinDate: '2024-01-01'}] },
+  { name: 'ทีมช่างเบนซ์', members: [{name: 'ช่างเบนซ์', joinDate: '2024-01-01'}, {name: 'ช่างกี้', joinDate: '2024-01-01'}] },
+  { name: 'ทีมช่างอั้ม', members: [{name: 'ช่างอั้ม', joinDate: '2024-01-01'}, {name: 'ช่างต้อม', joinDate: '2024-01-01'}, {name: 'ช่างทัด', joinDate: '2024-01-01'}] },
+  { name: 'ทีมตัววิ่ง', members: [{name: 'ช่างเวียร์', joinDate: '2024-01-01'}] },
+  { name: 'ทีมวัดพื้นที่', members: [] },
+];
+
 const JOB_TYPES = [
   { id: 'measure', label: 'วัดพื้นที่' }, { id: 'travel_go', label: 'วันเดินทางไป' }, { id: 'travel_back', label: 'วันเดินทางกลับ' }, { id: 'install', label: 'ติดตั้ง' }, { id: 'install_high', label: 'ติดตั้ง/บันไดสูง' }, { id: 'install_scaffold', label: 'ติดตั้ง/นั่งร้าน' }, { id: 'fix', label: 'แก้ไข' }, { id: 'fix_scaffold', label: 'แก้ไข/นั่งร้าน' }, { id: 'fix_free', label: 'แก้ไขซ้ำ/ไม่คิด' },
 ];
@@ -242,7 +249,7 @@ export default function App() {
     } catch (e) {}
   }, [dbReady]);
 
-  // COMPLETE SUBSCRIPTION BLOCK
+  // COMPLETE SUBSCRIPTION BLOCK สำหรับโครงสร้าง All Members
   useEffect(() => {
     if (!dbReady || !currentUser || !db) { setLoading(false); return; }
     try {
@@ -256,7 +263,6 @@ export default function App() {
 
         const unsubJobs = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'jobs'), (s) => setJobs(s.docs.map(d => ({ ...d.data(), id: d.id }))), handlePermissionError);
         
-        // FIXED: Explicitly declare unsubLeaves so it can be cleared
         const unsubLeaves = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'leaves'), (s) => setLeaves(s.docs.map(d => ({ ...d.data(), id: d.id }))), handlePermissionError);
         
         const unsubHols = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'holidays'), (s) => setHolidays(s.docs.map(d => d.data().date)), handlePermissionError);
@@ -467,7 +473,7 @@ export default function App() {
       try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'members', memberId)); setConfirmModal(null); showNotification('ลบช่างสำเร็จ'); } catch(e) { handlePermissionError(e); }
   });
 
-  const confirmMigration = async () => {
+  const handleConfirmTransfer = async () => {
       if (!transferringMember || !transferringMember.targetTeamId || !transferringMember.date) return;
       const member = allMembers.find(m => m.id === transferringMember.member.id);
       if (!member) return;
@@ -573,8 +579,21 @@ export default function App() {
             if (!excludedTypes.includes(job.type)) globalTotalRails += rails;
             if (job.type === 'measure') globalTotalMeasureJobs += 1;
 
-            // ⚡️ FILTER 1: นับเฉพาะช่างที่มีตัวตนในปัจจุบัน
-            const validTechs = (job.selectedTechs || []).filter(tid => allMembers.some(m => m.id === tid));
+            // ⚡️ FILTER 1: นับเฉพาะช่างที่มีตัวตนในปัจจุบัน และมีสิทธิ์ในวันนั้น (ยังไม่ลาออกและมีทีมอยู่)
+            const validTechs = (job.selectedTechs || []).filter(tid => {
+                const member = allMembers.find(m => m.id === tid);
+                if (!member) return false;
+                // ถ้าลาออกไปแล้ว (ก่อนหรือในวันที่ทำงาน) จะไม่นำมาคิดเงิน
+                if (member.resignDate && member.resignDate <= job.date) return false;
+                // ถ้ายังไม่เริ่มงาน จะไม่นำมาคิดเงิน
+                if (member.joinDate && member.joinDate > job.date) return false;
+                
+                // ต้องมีทีมสังกัดที่ถูกต้องในวันนั้น
+                const t = teams.find(x => isMemberInTeamOnDate(member, x.id, job.date));
+                if (!t) return false;
+                
+                return true;
+            });
             
             // ⚡️ FILTER 2: กรองคนที่ไม่ได้ติดสถานะ no_inc (No Incentive)
             const payingTechs = validTechs.filter(tid => {
@@ -683,7 +702,15 @@ export default function App() {
                 const dayJobs = periodJobs.filter(j => j.date === day).sort((a,b) => (a.timeSlot||'').localeCompare(b.timeSlot||''));
                 dayJobs.forEach(job => {
                     const involvedTeams = {};
-                    const validTechsInJob = (job.selectedTechs || []).filter(tid => allMembers.some(m => m.id === tid));
+                    
+                    const validTechsInJob = (job.selectedTechs || []).filter(tid => {
+                        const member = allMembers.find(x => x.id === tid);
+                        if(!member) return false;
+                        if (member.resignDate && member.resignDate <= job.date) return false;
+                        if (member.joinDate && member.joinDate > job.date) return false;
+                        return true;
+                    });
+                    
                     const totalTechsInJob = validTechsInJob.length; 
                     
                     validTechsInJob.forEach(tid => {
@@ -813,7 +840,6 @@ export default function App() {
       </div>
   );
 
-  // ⚡️ PRINT STYLES FOR REPEATING HEADERS
   const printStyles = `
   @media print { 
       @page { size: A4; margin: 1cm; } 
@@ -1271,7 +1297,7 @@ export default function App() {
                       <div className="bg-orange-50 p-4 rounded-lg border border-orange-100 flex items-center justify-between">
                           <div>
                               <p className="text-sm font-bold text-orange-800">กู้คืนข้อมูลเริ่มต้น (Reset Data)</p>
-                              <p className="text-xs text-orange-600 mt-1">ใช้เมื่อข้อมูลทีมช่างหาย หรือต้องการเริ่มระบบใหม่</p>
+                              <p className="text-xs text-orange-600 mt-1">ใช้เมื่อข้อมูลทีมช่างหาย หรือต้องการเริ่มระบบใหม่ (V7)</p>
                           </div>
                           <button onClick={handleSeedData} className="bg-orange-600 text-white px-4 py-2 rounded text-xs hover:bg-orange-700 transition-colors">กู้คืนข้อมูล</button>
                       </div>
